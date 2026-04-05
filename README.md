@@ -26,9 +26,9 @@ J2AMP is a proof-of-concept but also very fully-featured music player for Apple 
 - Install NetBeans 7.4 from [here](https://dlc-cdn.sun.com/netbeans/7.4/final/bundles/netbeans-7.4-windows.exe) and the ProGuard library from [here](https://updates.netbeans.org/netbeans/updates/7.4/uc/final/certified/modules/extra/org-netbeans-modules-mobility-proguard.nbm).
 - Get the following files and put it into `/res`:
 
-  - client_id.bin and private_key.pem from a Widevine-authorized device. I wont provide it in the source code but you can look it up how to get them. Convert the private_key.pem to private_key.der:
+  - client_id.bin and private_key.pem from a Widevine-authorized device. I won't provide it in the source code, but you can look it up how to get them. Convert the private_key.pem to private_key.der:
     ``openssl rsa -in key.pem -outform der -out key.der``
-  - LastFM's API token and secret key, formatted as last_fm.json.
+  - LastFM's API token and secret key, formatted as lastfm_token.json.
 
   ```
   {"apiKey" : "<your api key here>",
