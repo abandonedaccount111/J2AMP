@@ -84,6 +84,7 @@ public class AppleMusicMIDlet extends MIDlet {
     private void initMainScreens() {
         mainMenu         = new MainMenu(this, display);
         playbackManager  = new PlaybackManager();
+        mainMenu.setPlaybackManager(playbackManager);
         nowPlayingScreen = new NowPlayingScreen(playbackManager, display, mainMenu, this);
         // Chain scrobbler as a listener after NowPlayingScreen if signed into Last.fm
         if (Settings.lastFmSk.length() > 0) {
@@ -147,7 +148,7 @@ public class AppleMusicMIDlet extends MIDlet {
                 try {
                     AMAPI a = getAPI();
                     Hashtable params = new Hashtable();
-                    params.put("limit", "100");
+                    params.put("limit", String.valueOf(Settings.queryLimit));
                     params.put("l",     a.getStorefrontLanguage());
                     JSONObject resp = a.APIRequest("/v1/me/library/albums", params, "GET", null, null);
                     JSONArray  data = resp.getArray("data", null);
@@ -253,7 +254,7 @@ public class AppleMusicMIDlet extends MIDlet {
                 try {
                     AMAPI a = getAPI();
                     Hashtable params = new Hashtable();
-                    params.put("limit", "100");
+                    params.put("limit", String.valueOf(Settings.queryLimit));
                     params.put("l",     a.getStorefrontLanguage());
                     JSONObject resp = a.APIRequest(endpoint, params, "GET", null, null);
                     JSONArray  data = resp.getArray("data", null);

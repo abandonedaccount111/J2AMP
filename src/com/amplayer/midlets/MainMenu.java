@@ -1,5 +1,6 @@
 package com.amplayer.midlets;
 
+import com.amplayer.playback.PlaybackManager;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
@@ -79,6 +80,7 @@ public class MainMenu extends Canvas implements CommandListener {
 
     private final AppleMusicMIDlet midlet;
     private final Display          display;
+    private       PlaybackManager  pm;  // set after PM is created; used for live track subtext
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -92,6 +94,11 @@ public class MainMenu extends Canvas implements CommandListener {
         addCommand(CMD_SELECT);
         addCommand(CMD_EXIT);
         setCommandListener(this);
+    }
+
+    /** Called once the PlaybackManager is ready so the Now Playing row can show live info. */
+    public void setPlaybackManager(PlaybackManager pm) {
+        this.pm = pm;
     }
 
     // -------------------------------------------------------------------------
@@ -133,13 +140,18 @@ public class MainMenu extends Canvas implements CommandListener {
                 g.fillRect(0, y, ACCENT_W, ITEM_H);
             }
 
+            int textX  = PAD + ACCENT_W + 4;
+            int availW = w - textX - PAD - 3;
+
             g.setFont(NAME_FONT);
             g.setColor(COLOR_NAME);
-            g.drawString(LABELS[i], PAD + ACCENT_W + 4, y + PAD, Graphics.LEFT | Graphics.TOP);
+            g.drawString(clip(LABELS[i], NAME_FONT, availW), textX, y + PAD,
+                         Graphics.LEFT | Graphics.TOP);
 
+            String sub = (i == ITEM_NOW_PLAYING) ? nowPlayingSub() : SUBLABELS[i];
             g.setFont(SUBNAME_FONT);
             g.setColor(COLOR_SUBNAME);
-            g.drawString(SUBLABELS[i], PAD + ACCENT_W + 4,
+            g.drawString(clip(sub, SUBNAME_FONT, availW), textX,
                          y + PAD + NAME_FONT.getHeight(), Graphics.LEFT | Graphics.TOP);
 
             g.setColor(COLOR_DIVIDER);
@@ -216,5 +228,26 @@ public class MainMenu extends Canvas implements CommandListener {
         } else if (c == CMD_SELECT) {
             fireSelection();
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private String nowPlayingSub() {
+        if (pm == null) return SUBLABELS[ITEM_NOW_PLAYING];
+        String name = pm.getCurrentName();
+        if (name == null || name.length() == 0) return SUBLABELS[ITEM_NOW_PLAYING];
+        String artist = pm.getCurrentArtist();
+        if (artist != null && artist.length() > 0) return artist + " - " + name;
+        return name;
+    }
+
+    private static String clip(String text, Font font, int maxW) {
+        if (text == null || text.length() == 0) return "";
+        if (font.stringWidth(text) <= maxW) return text;
+        while (text.length() > 1 && font.stringWidth(text + "...") > maxW)
+            text = text.substring(0, text.length() - 1);
+        return text + "...";
     }
 }

@@ -1,6 +1,7 @@
 package com.amplayer.playback;
 
 import com.amplayer.api.AMAPI;
+import com.amplayer.utils.Settings;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -229,19 +230,29 @@ public class PlaybackManager implements PlayerListener {
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    byte[] data = readFromCache(id);
-                    if (data == null) {
+                    // Try to play from cache file first (avoids RAM for byte array)
+                    String cachePath = cacheFilePath(id);
+                    if (!cachedSizes.containsKey(id)) {
                         AMSongHelper helper = new AMSongHelper();
                         String songUrl = helper.getWebPlaybackURL(
                             id, "songs",
                             api.getDeveloperToken(), api.getUserToken());
-                        data = helper.getAMDecryptedSong(
+                        byte[] data = helper.getAMDecryptedSong(
                             songUrl, null, clientIdBlob, privateKeyDer,
                             api.getDeveloperToken(), api.getUserToken());
                         if (data == null) throw new Exception("Decryption returned null");
                         writeToCache(id, data);
+                        data = null; // free before opening file — peak RAM released
+                        System.gc();
                     }
-                    startPlayback(data);
+                    // Attempt to play from file stream (saves ~8 MB vs byte-array path)
+                    boolean started = startPlaybackFromFile(cachePath);
+                    if (!started) {
+                        // Fallback: read into byte array (older devices)
+                        byte[] data = readFromCache(id);
+                        if (data == null) throw new Exception("Cache read failed");
+                        startPlayback(data);
+                    }
                     evictStale(index, idSnap);
                     schedulePreloads(index, idSnap);
                 } catch (Exception e) {
@@ -250,6 +261,45 @@ public class PlaybackManager implements PlayerListener {
                 }
             }
         }).start();
+    }
+
+    /**
+     * Try to start playback by streaming directly from a cache file.
+     * Returns true on success, false if the device does not support it
+     * (caller should fall back to the byte-array path).
+     *
+     * Playing from an InputStream rather than a ByteArrayInputStream means
+     * the decrypted byte array can be released before playback starts,
+     * saving ~8 MB of sustained heap usage.
+     */
+    private synchronized boolean startPlaybackFromFile(String path) {
+        if (path == null) return false;
+        FileConnection fc = null;
+        InputStream    in = null;
+        try {
+            stopPlayer();
+            fc = (FileConnection) Connector.open(path, Connector.READ);
+            if (!fc.exists() || fc.fileSize() == 0) return false;
+            in     = fc.openInputStream();
+            player = Manager.createPlayer(in, "audio/mp4");
+            player.realize();
+            player.prefetch();
+            VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
+            if (vc != null) vc.setLevel(100);
+            player.addPlayerListener(this);
+            player.start();
+            isPlaying = true;
+            isLoading = false;
+            // Note: fc and in must stay open while the player reads the stream.
+            // We intentionally do NOT close them here.
+            firePlayStateChanged(true);
+            return true;
+        } catch (Exception e) {
+            // Device may not support InputStream-based player — fall back
+            try { if (in != null) in.close(); }   catch (Exception ignored) {}
+            try { if (fc != null) fc.close(); }   catch (Exception ignored) {}
+            return false;
+        }
     }
 
     private synchronized void startPlayback(byte[] data) throws Exception {
@@ -418,6 +468,7 @@ public class PlaybackManager implements PlayerListener {
      * mid-preload does not cause confusion.
      */
     private void schedulePreloads(int center, String[] ids) {
+        if (!Settings.preloadEnabled) return;
         if (ids == null) return;
         if (center + 1 < ids.length) startPreloadThread(center + 1, ids);
         if (center - 1 >= 0)         startPreloadThread(center - 1, ids);

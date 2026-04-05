@@ -68,11 +68,10 @@ public class AMSongHelper {
             String devToken,
             String userToken
     ) {
+        String tempPath = null;
         try {
             // 1. Fetch the m3u8 playlist (CONTENT_URL is always m3u8)
-            // if url starts with https://aod-ssl. -> change to http://aod.
             String transformedUrl = replaceFirst(CONTENT_URL, "https://aod-ssl.", "http://aod.");
-
             String hlsContent = getText(transformedUrl);
             String baseUrl    = transformedUrl.substring(0, transformedUrl.lastIndexOf('/') + 1);
 
@@ -120,44 +119,272 @@ public class AMSongHelper {
                 keysJson.put("00000000000000000000000000000001", contentKey.key);
             }
 
-            // 6. Download the full mp4 in one request
-            byte[] fullFile = get(mp4Url);
+            // 6. Stream-download the full mp4 to a temp file instead of a byte array.
+            //    This avoids holding the entire encrypted file in the JVM heap.
+            tempPath = getTempFilePath(adamId);
+            if (tempPath == null) {
+                // No filesystem — fall back to in-memory download
+                byte[] fullFile = get(mp4Url);
+                return decryptInMemory(fullFile, firstChunkLen, secondChunkLen,
+                                       isWa, keysJson, timescaleFrom(fullFile, firstChunkLen));
+            }
+            downloadToFile(mp4Url, tempPath);
 
-            // 7. Slice firstChunk and secondChunk from the downloaded file
-            byte[] firstChunk   = ByteUtils.slice(fullFile, 0, firstChunkLen);
-            byte[] secondChunk  = ByteUtils.slice(fullFile, firstChunkLen,
-                                                   firstChunkLen + secondChunkLen);
-            byte[] contentChunk = ByteUtils.slice(fullFile, firstChunkLen, fullFile.length);
-            fullFile = null;
+            // 7. Read firstChunk and secondChunk from the temp file head.
+            //    Both fit in a small header read (typically < 2 MB combined).
+            int headerLen = firstChunkLen + secondChunkLen;
+            byte[] header = readFileRange(tempPath, 0, headerLen);
+            byte[] firstChunk  = new byte[firstChunkLen];
+            byte[] secondChunk = new byte[secondChunkLen];
+            System.arraycopy(header, 0,             firstChunk,  0, firstChunkLen);
+            System.arraycopy(header, firstChunkLen, secondChunk, 0, secondChunkLen);
+            header = null;
 
-            // 8. Read timescale and patch KIDs NOW, before allocating combined,
-            //    so firstChunk can be freed before the large combined+decrypted peak.
+            // 8. Timescale + KID patching from firstChunk
             int    timescale   = readMvhdTimescale(firstChunk);
             byte[] initSegment = isWa ? firstChunk : assignSequentialKids(firstChunk);
-            firstChunk = null;  // no longer needed — free before combined is allocated
+            firstChunk = null;
 
-            // 9. Combine init + content and decrypt
-            byte[] combined = new byte[initSegment.length + contentChunk.length];
-            System.arraycopy(initSegment,  0, combined, 0,                  initSegment.length);
-            System.arraycopy(contentChunk, 0, combined, initSegment.length, contentChunk.length);
-            initSegment  = null;
-            contentChunk = null;
+            // 9. Build combined directly: alloc once, fill from initSegment then file content.
+            //    Peak at this step: secondChunk (~1 MB) + initSegment (~1 MB) + combined (~8 MB)
+            //    vs old peak: fullFile (8MB) + contentChunk (7MB) + combined (8MB) = 23 MB.
+            long fileSize  = getFileSize(tempPath);
+            int  contentLen = (int)(fileSize - firstChunkLen);
+            int initLen = initSegment.length;
+            byte[] combined = new byte[initLen + contentLen];
+            System.arraycopy(initSegment, 0, combined, 0, initLen);
+            initSegment = null; // free ~1 MB before filling content
+            // Read content (file[firstChunkLen..end]) into combined[initLen..]
+            fillFromFile(tempPath, firstChunkLen, combined, initLen, contentLen);
 
+            // Delete temp file as soon as combined is built
+            deleteFile(tempPath);
+            tempPath = null;
+
+            // 10. Decrypt (peak: secondChunk + combined + decrypted ≈ 17 MB)
             byte[] decrypted = AmDecrypt.decrypt(combined, keysJson);
             combined = null;
             System.gc();
 
-            // 10. Shift TFDT timestamps to t=0
+            // 11. TFDT timestamp shift
             double firstTs = readFirstTfdtTimestampInSeconds(secondChunk, timescale);
             secondChunk = null;
+            if (firstTs > 0) shiftTfdtTimestamps(decrypted, timescale, -firstTs);
 
-            if (firstTs > 0) {
-                shiftTfdtTimestamps(decrypted, timescale, -firstTs);
-            }
             return decrypted;
         } catch (Exception e) {
             e.printStackTrace();
             return null;
+        } finally {
+            if (tempPath != null) deleteFile(tempPath);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // In-memory fallback (for devices without a writable file system)
+    // -------------------------------------------------------------------------
+
+    private byte[] decryptInMemory(byte[] fullFile, int firstChunkLen, int secondChunkLen,
+                                   boolean isWa, Hashtable keysJson, int timescale) {
+        byte[] firstChunk   = ByteUtils.slice(fullFile, 0, firstChunkLen);
+        byte[] secondChunk  = ByteUtils.slice(fullFile, firstChunkLen,
+                                               firstChunkLen + secondChunkLen);
+        byte[] contentChunk = ByteUtils.slice(fullFile, firstChunkLen, fullFile.length);
+        fullFile = null;
+
+        byte[] initSegment = isWa ? firstChunk : assignSequentialKids(firstChunk);
+        firstChunk = null;
+
+        byte[] combined = new byte[initSegment.length + contentChunk.length];
+        System.arraycopy(initSegment,  0, combined, 0,                  initSegment.length);
+        System.arraycopy(contentChunk, 0, combined, initSegment.length, contentChunk.length);
+        initSegment = null; contentChunk = null;
+
+        byte[] decrypted = AmDecrypt.decrypt(combined, keysJson);
+        combined = null;
+        System.gc();
+
+        double firstTs = readFirstTfdtTimestampInSeconds(secondChunk, timescale);
+        secondChunk = null;
+        if (firstTs > 0) shiftTfdtTimestamps(decrypted, timescale, -firstTs);
+        return decrypted;
+    }
+
+    private int timescaleFrom(byte[] fullFile, int firstChunkLen) {
+        if (firstChunkLen > fullFile.length) return 48000;
+        byte[] head = ByteUtils.slice(fullFile, 0, firstChunkLen);
+        return readMvhdTimescale(head);
+    }
+
+    // -------------------------------------------------------------------------
+    // Temp file helpers
+    // -------------------------------------------------------------------------
+
+    /** Resolve a temp path in the same cache directory PlaybackManager uses. */
+    private String getTempFilePath(String adamId) {
+        // Mirror PlaybackManager's cache-dir logic using a recognised system property
+        String dir = null;
+        String mc = System.getProperty("fileconn.dir.memorycard");
+        if (mc != null && mc.length() > 0) {
+            if (!mc.endsWith("/")) mc += "/";
+            dir = mc + "wvj2me/";
+        }
+        if (dir == null) {
+            try {
+                Enumeration roots = FileSystemRegistry.listRoots();
+                while (roots.hasMoreElements()) {
+                    String root = (String) roots.nextElement();
+                    if (!root.toUpperCase().startsWith("C")) {
+                        dir = "file:///" + root + "wvj2me/"; break;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        if (dir == null) {
+            String priv = System.getProperty("fileconn.dir.private");
+            if (priv != null && priv.length() > 0) {
+                if (!priv.endsWith("/")) priv += "/";
+                dir = priv + "wvj2me/";
+            }
+        }
+        if (dir == null) return null;
+        // Sanitise adamId for filename
+        StringBuffer sb = new StringBuffer();
+        for (int i = 0; i < adamId.length() && sb.length() < 32; i++) {
+            char c = adamId.charAt(i);
+            if (Character.isDigit(c) || (c>='a'&&c<='z') || (c>='A'&&c<='Z')) sb.append(c);
+        }
+        if (sb.length() == 0) sb.append("tmp");
+        return dir + sb.toString() + "_enc.tmp";
+    }
+
+    /**
+     * Stream the HTTP response body directly to a file (no in-memory buffer).
+     * Writes in 32 KB chunks to keep heap usage low during download.
+     */
+    private void downloadToFile(String url, String filePath) throws Exception {
+        HttpConnection conn = null;
+        InputStream    in   = null;
+        FileConnection fc   = null;
+        OutputStream   out  = null;
+        try {
+            conn = (HttpConnection) SocketHttpConnection.open(url);
+            conn.setRequestMethod(HttpConnection.GET);
+            int status = conn.getResponseCode();
+            if (status != HttpConnection.HTTP_OK)
+                throw new Exception("HTTP " + status + " downloading mp4");
+            in = conn.openInputStream();
+
+            fc = (FileConnection) Connector.open(filePath, Connector.READ_WRITE);
+            if (!fc.exists()) fc.create();
+            else              fc.truncate(0);
+            out = fc.openOutputStream();
+
+            byte[] buf = new byte[32768]; // 32 KB — small footprint, good throughput
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            out.flush();
+        } finally {
+            closeQuietly(in);
+            closeQuietly(out);
+            closeConn(conn);
+            if (fc != null) try { fc.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    /** Read the first {@code len} bytes of a file into a new byte array. */
+    private byte[] readFileRange(String filePath, int len) throws Exception {
+        return readFileRange(filePath, 0, len);
+    }
+
+    /** Read {@code len} bytes starting at {@code offset} from a file into a new byte array. */
+    private byte[] readFileRange(String filePath, int offset, int len) throws Exception {
+        FileConnection fc = null;
+        InputStream    in = null;
+        try {
+            fc = (FileConnection) Connector.open(filePath, Connector.READ);
+            in = fc.openInputStream();
+            // Skip to offset by reading and discarding
+            if (offset > 0) {
+                byte[] skip = new byte[Math.min(offset, 8192)];
+                int remaining = offset;
+                while (remaining > 0) {
+                    int toSkip = Math.min(remaining, skip.length);
+                    int read   = in.read(skip, 0, toSkip);
+                    if (read < 0) throw new Exception("Unexpected EOF skipping to offset");
+                    remaining -= read;
+                }
+            }
+            byte[] buf = new byte[len];
+            int pos = 0;
+            while (pos < len) {
+                int n = in.read(buf, pos, len - pos);
+                if (n < 0) throw new Exception("Unexpected EOF reading file range");
+                pos += n;
+            }
+            return buf;
+        } finally {
+            closeQuietly(in);
+            if (fc != null) try { fc.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Read {@code len} bytes from {@code filePath} starting at {@code fileOffset}
+     * directly into {@code dest[destOffset..]}, avoiding a separate allocation.
+     */
+    private void fillFromFile(String filePath, int fileOffset,
+                              byte[] dest, int destOffset, int len) throws Exception {
+        FileConnection fc = null;
+        InputStream    in = null;
+        try {
+            fc = (FileConnection) Connector.open(filePath, Connector.READ);
+            in = fc.openInputStream();
+            // Skip to fileOffset
+            if (fileOffset > 0) {
+                byte[] skip = new byte[Math.min(fileOffset, 16384)];
+                int remaining = fileOffset;
+                while (remaining > 0) {
+                    int toSkip = Math.min(remaining, skip.length);
+                    int n      = in.read(skip, 0, toSkip);
+                    if (n < 0) throw new Exception("Unexpected EOF skipping to content");
+                    remaining -= n;
+                }
+            }
+            // Read directly into dest
+            int pos = destOffset;
+            int end = destOffset + len;
+            while (pos < end) {
+                int n = in.read(dest, pos, end - pos);
+                if (n < 0) break; // partial file — stop here
+                pos += n;
+            }
+        } finally {
+            closeQuietly(in);
+            if (fc != null) try { fc.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private long getFileSize(String filePath) {
+        FileConnection fc = null;
+        try {
+            fc = (FileConnection) Connector.open(filePath, Connector.READ);
+            return fc.fileSize();
+        } catch (Exception e) {
+            return 0;
+        } finally {
+            if (fc != null) try { fc.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private void deleteFile(String filePath) {
+        FileConnection fc = null;
+        try {
+            fc = (FileConnection) Connector.open(filePath, Connector.READ_WRITE);
+            if (fc.exists()) fc.delete();
+        } catch (Exception ignored) {
+        } finally {
+            if (fc != null) try { fc.close(); } catch (Exception ignored) {}
         }
     }
 

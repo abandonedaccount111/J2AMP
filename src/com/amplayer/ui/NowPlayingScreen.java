@@ -191,6 +191,7 @@ public class NowPlayingScreen extends Canvas
     // -------------------------------------------------------------------------
 
     private void triggerArtLoad() {
+        if (!Settings.artEnabled) return;
         if (artLoadStarted) return;
         if (loadingTrack) return;  // wait until song finishes loading to avoid KErrServerBusy -16
         String tmpl = pm.getArtUrlTemplate();

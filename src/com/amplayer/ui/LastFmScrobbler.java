@@ -83,14 +83,16 @@ public class LastFmScrobbler implements PlaybackManager.Listener {
         startTime     = System.currentTimeMillis();
         scrobbled     = false;
 
-        // Update Now Playing (non-blocking)
-        new Thread(new Runnable() {
-            public void run() {
-                String sk = Settings.lastFmSk;
-                if (sk == null || sk.length() == 0) return;
-                lfmHelper.updateNowPlaying(sk, artist, name, album);
-            }
-        }).start();
+        // Update Now Playing (non-blocking, only if toggle is on)
+        if (Settings.lastFmNowPlaying) {
+            new Thread(new Runnable() {
+                public void run() {
+                    String sk = Settings.lastFmSk;
+                    if (sk == null || sk.length() == 0) return;
+                    lfmHelper.updateNowPlaying(sk, artist, name, album);
+                }
+            }).start();
+        }
 
         // Start scrobble timer
         startScrobbleTimer(name, artist, album);
