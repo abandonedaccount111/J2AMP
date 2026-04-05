@@ -4,7 +4,7 @@ import java.util.Hashtable;
 import java.util.Vector;
 import java.util.Enumeration;
 import org.bouncycastle.crypto.engines.AESEngine;
-import org.bouncycastle.crypto.modes.CTRBlockCipher;
+import org.bouncycastle.crypto.modes.SICBlockCipher;
 import org.bouncycastle.crypto.modes.CBCBlockCipher;
 import org.bouncycastle.crypto.params.ParametersWithIV;
 import org.bouncycastle.crypto.params.KeyParameter;
@@ -705,7 +705,7 @@ public class AmDecrypt {
                     iv = padded;
                 }
 
-                CTRBlockCipher ctr = new CTRBlockCipher(new AESEngine());
+                SICBlockCipher ctr = new SICBlockCipher(new AESEngine());
                 ctr.init(false, new ParametersWithIV(new KeyParameter(key), iv));
 
                 if (sample.subsamples.length > 0) {

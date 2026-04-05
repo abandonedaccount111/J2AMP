@@ -25,7 +25,7 @@ import com.widevine.WidevineDRM;
 import com.widevine.WidevineConstants;
 import com.widevine.LicenseSession;
 import javax.microedition.io.Connector;
-import tech.alicesworld.ModernConnector.*;
+import tech.alicesworld.ModernConnectorSym93.*;
 import com.amplayer.utils.IAPManager;
 import com.amplayer.utils.SocketHttpConnection;
 

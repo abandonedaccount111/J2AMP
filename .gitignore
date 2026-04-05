@@ -8,3 +8,4 @@ res/private_key.der
 res/private_key.pem
 res/client_id.bin
 .claude
+res/j2me.ks

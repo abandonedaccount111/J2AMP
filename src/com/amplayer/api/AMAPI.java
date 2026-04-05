@@ -19,7 +19,9 @@ import com.amplayer.utils.URLEncoder;
 import java.util.Enumeration;
 import java.util.Hashtable;
 
-import tech.alicesworld.ModernConnector.*;
+
+import tech.alicesworld.ModernConnectorSym93.*;
+
 
 /**
  *

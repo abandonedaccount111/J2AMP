@@ -15,7 +15,9 @@ import com.widevine.types.KeyContainer;
 import com.widevine.types.WidevineInfo;
 import javax.microedition.io.HttpsConnection;
 import org.bouncycastle.util.encoders.Base64;
-import tech.alicesworld.ModernConnector.*;
+
+import tech.alicesworld.ModernConnectorSym93.*;
+
 import com.amplayer.utils.IAPManager;
 
 public class WidevineMIDlet extends MIDlet {

@@ -1,7 +1,7 @@
 package com.widevine.utils;
 
 import java.io.IOException;
-import javaf.math.BigInteger;
+import java.math.BigInteger;
 
 import org.bouncycastle.crypto.params.RSAKeyParameters;
 import org.bouncycastle.crypto.params.RSAPrivateCrtKeyParameters;

@@ -1,10 +1,12 @@
 package com.amplayer.utils;
 
 import com.amplayer.utils.Settings;
-import com.nokia.mid.iapinfo.AccessPoint;
-import javax.microedition.rms.RecordStore;
-import com.nokia.mid.iapinfo.IAPInfo;
 
+import javax.microedition.rms.RecordStore;
+//#ifdef SYMBIAN9_3
+//# import com.nokia.mid.iapinfo.AccessPoint;
+//# import com.nokia.mid.iapinfo.IAPInfo;
+//#endif
 
 /**
  * Remembers the user's IAP (Internet Access Point) selection so the
@@ -63,12 +65,14 @@ public class IAPManager {
 //            int colon = prop.lastIndexOf(':');
 //            if (colon < 0) return;
 //            int id = Integer.parseInt(prop.substring(colon + 1).trim());
-//            if (id >= 0) save(id);
-            IAPInfo iap_if = IAPInfo.getIAPInfo();
-            AccessPoint lastSelectedAccessPoint = iap_if.getLastUsedAccessPoint();
-            if (lastSelectedAccessPoint == null) lastSelectedAccessPoint = iap_if.getAccessPoints()[0];
-            if (lastSelectedAccessPoint != null) save(lastSelectedAccessPoint.getID());
-            System.out.println("IAPID: " + lastSelectedAccessPoint.getID());
+//            if (id >= 0) save(id)
+            //#ifdef SYMBIAN9_3
+//#                  IAPInfo iap_if = IAPInfo.getIAPInfo();
+//#                  AccessPoint lastSelectedAccessPoint = iap_if.getLastUsedAccessPoint();
+//#                 if (lastSelectedAccessPoint == null) lastSelectedAccessPoint = iap_if.getAccessPoints()[0];
+//#                 if (lastSelectedAccessPoint != null) save(lastSelectedAccessPoint.getID());
+//#                 System.out.println("IAPID: " + lastSelectedAccessPoint.getID());
+            //#endif 
         } catch (Exception ignored) {
             ignored.printStackTrace();
         }
