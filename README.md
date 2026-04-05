@@ -17,7 +17,7 @@ J2AMP is a proof-of-concept but also very fully-featured music player for Apple 
   - 1. Open https://music.apple.com in your PC's browser
   - 2. Log in and open the Console tab in the Web Inspector (F12 or CTRL+SHIFT+I)
   - 3. In the Web Inspector, go to the Console tab and paste:"
-       ``js JSON.stringify({ devToken: MusicKit.getInstance().developerToken,  userToken: MusicKit.getInstance().musicUserToken }) ``
+       ``JSON.stringify({ devToken: MusicKit.getInstance().developerToken,  userToken: MusicKit.getInstance().musicUserToken }) ``
   - 4. Copy the output JSON and save it as a .json file on your phone
 - Install the WV2J2ME.jar file in [./dist](https://github.com/abandonedaccount111/J2AMP/tree/main/dist) into your phone.
 
@@ -26,9 +26,9 @@ J2AMP is a proof-of-concept but also very fully-featured music player for Apple 
 - Install NetBeans 7.4 from [here](https://dlc-cdn.sun.com/netbeans/7.4/final/bundles/netbeans-7.4-windows.exe) and the ProGuard library from [here](https://updates.netbeans.org/netbeans/updates/7.4/uc/final/certified/modules/extra/org-netbeans-modules-mobility-proguard.nbm).
 - Get the following files and put it into `/res`:
 
-  - client_id.bin and private_key.pem from a Widevine-authorized device. I wont provide it in the source code but you can look it up how to get them. Convert the private_key.pem to private_key.der:
+  - client_id.bin and private_key.pem from a Widevine-authorized device. I won't provide it in the source code, but you can look it up how to get them. Convert the private_key.pem to private_key.der:
     ``openssl rsa -in key.pem -outform der -out key.der``
-  - LastFM's API token and secret key, formatted as last_fm.json.
+  - LastFM's API token and secret key, formatted as lastfm_token.json.
 
   ```
   {"apiKey" : "<your api key here>",
