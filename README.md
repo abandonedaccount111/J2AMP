@@ -50,3 +50,7 @@ J2AMP is a proof-of-concept but also very fully-featured music player for Apple 
 ### LICENSE
 
 This software is licensed under the terms of GNU General Public License, Version 3.0.
+
+### DISCLAIMER
+
+This software is intended for educational purposes only. The creator assumes no responsibility for any illegal activities carried out with it, and the code is made public for viewing purposes only. Please use this software ethically and responsibly.
