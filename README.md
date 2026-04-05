@@ -10,6 +10,14 @@ J2AMP is a proof-of-concept but also very fully-featured music player for Apple 
 - Lyrics viewing
 - Shuffle, repeat
 
+### Images:
+![Main menu](/images/mainmenu.png)
+![Now playing screen](/images/nowplaying.png)
+![Search results](/images/searchresult.png)
+![Lyrics view](/images/lyrics.png)
+![Album view](/images/album.png)
+
+
 ### User instruction
 
 - Your phones need to be cracked to install necessary TLS libraries. More information look at [here](https://gtrxac.fi/j2me/proxyless)
