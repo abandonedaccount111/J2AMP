@@ -1,0 +1,10 @@
+MIDlet-1: WidevineDRM,,com.widevine.WidevineMIDlet
+MIDlet-2: AppleMusicTest,,com.amplayer.midlets.AppleMusicMIDlet
+MIDlet-Jar-Size: 3801637
+MIDlet-Jar-URL: WVJ2me.jar
+MIDlet-Name: widevine-j2me
+MIDlet-Vendor: widevine-j2me
+MIDlet-Version: 1.0.0
+MicroEdition-Configuration: CLDC-1.1
+MicroEdition-Profile: MIDP-2.0
+

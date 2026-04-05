@@ -1,0 +1,341 @@
+package com.amplayer.ui;
+
+import com.amplayer.playback.PlaybackManager;
+import com.amplayer.utils.Settings;
+import javax.microedition.lcdui.Canvas;
+import javax.microedition.lcdui.Command;
+import javax.microedition.lcdui.CommandListener;
+import javax.microedition.lcdui.Display;
+import javax.microedition.lcdui.Displayable;
+import javax.microedition.lcdui.Font;
+import javax.microedition.lcdui.Graphics;
+
+/**
+ * Scrollable queue browser.
+ *
+ * Shows every track in the current playback queue.  The currently playing
+ * track is highlighted with an accent left-bar and bold text.  Pressing FIRE
+ * on any row calls PlaybackManager.play(index) to jump there immediately.
+ */
+public class QueueView extends Canvas
+        implements CommandListener, PlaybackManager.Listener {
+
+    // -------------------------------------------------------------------------
+    // Colors / fonts
+    // -------------------------------------------------------------------------
+
+    private static final int COLOR_BG       = 0x000000;
+    private static final int COLOR_HEADER   = 0x111111;
+    private static final int COLOR_DIVIDER  = 0x2C2C2E;
+    private static final int COLOR_ACCENT   = 0xFA2D48;
+    private static final int COLOR_TEXT1    = 0xFFFFFF;
+    private static final int COLOR_TEXT2    = 0x8E8E93;
+    private static final int COLOR_SEL_BG   = 0x1C1C1E;
+
+    private static final Font HDR_FONT  = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD,  Font.SIZE_MEDIUM);
+    private static final Font NAME_FONT = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD,  Font.SIZE_MEDIUM);
+    private static final Font SUB_FONT  = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_PLAIN, Font.SIZE_SMALL);
+    private static final Font NUM_FONT  = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_PLAIN, Font.SIZE_SMALL);
+
+    private static final int PAD = 8;
+
+    // -------------------------------------------------------------------------
+    // Commands
+    // -------------------------------------------------------------------------
+
+    private static final Command CMD_BACK = new Command("Back", Command.BACK, 1);
+    private static final Command CMD_PLAY = new Command("Play", Command.OK,   1);
+
+    // -------------------------------------------------------------------------
+    // Dependencies
+    // -------------------------------------------------------------------------
+
+    private final PlaybackManager          pm;
+    private final Display                  display;
+    private final Displayable              backScreen;
+    private final PlaybackManager.Listener prevListener;
+
+    // -------------------------------------------------------------------------
+    // UI state
+    // -------------------------------------------------------------------------
+
+    private int currentIndex;
+    private int selectedIndex;
+    private int scrollOffset;
+
+    // ── Marquee (selected row only) ──────────────────────────────────────────
+    private static final int MQ_SPEED = 2;
+    private static final int MQ_PAUSE = 20;
+    private int  mqOffset  = 0;
+    private int  mqPause   = MQ_PAUSE;
+    private int  mqMaxOvf  = 0;
+    private volatile boolean mqRunning = false;
+
+    // -------------------------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------------------------
+
+    public QueueView(PlaybackManager pm, Display display, Displayable backScreen) {
+        this.pm         = pm;
+        this.display    = display;
+        this.backScreen = backScreen;
+
+        prevListener  = pm.getListener();
+        pm.setListener(this);
+
+        currentIndex  = pm.getCurrentIndex();
+        selectedIndex = currentIndex >= 0 ? currentIndex : 0;
+        scrollOffset  = 0;
+        ensureVisible(selectedIndex);
+
+        setFullScreenMode(true);
+        addCommand(CMD_BACK);
+        addCommand(CMD_PLAY);
+        setCommandListener(this);
+    }
+
+    // -------------------------------------------------------------------------
+    // PlaybackManager.Listener — chain to previous listener
+    // -------------------------------------------------------------------------
+
+    public void onTrackChanged(int index) {
+        if (prevListener != null) prevListener.onTrackChanged(index);
+        currentIndex  = pm.getCurrentIndex();
+        selectedIndex = currentIndex >= 0 ? currentIndex : selectedIndex;
+        mqReset();
+        ensureVisible(selectedIndex);
+        repaint();
+    }
+
+    public void onPlayStateChanged(boolean playing) {
+        if (prevListener != null) prevListener.onPlayStateChanged(playing);
+        repaint();
+    }
+
+    public void onError(String msg) {
+        if (prevListener != null) prevListener.onError(msg);
+    }
+
+    // -------------------------------------------------------------------------
+    // Key input
+    // -------------------------------------------------------------------------
+
+    protected void showNotify() { mqStart(); }
+    protected void hideNotify() { mqStop();  }
+
+    private void mqStart() {
+        if (!Settings.marqueeEnabled) return;
+        if (mqRunning) return;
+        mqRunning = true;
+        new Thread(new Runnable() {
+            public void run() {
+                while (mqRunning) {
+                    try { Thread.sleep(80); } catch (InterruptedException e) { break; }
+                    mqTick(); repaint();
+                }
+            }
+        }).start();
+    }
+    private void mqStop()  { mqRunning = false; }
+    private void mqReset() { mqOffset = 0; mqPause = MQ_PAUSE; mqMaxOvf = 0; }
+    private void mqTick() {
+        if (mqMaxOvf <= 0) { mqOffset = 0; return; }
+        if (mqPause > 0)   { mqPause--;    return; }
+        mqOffset += MQ_SPEED;
+        if (mqOffset >= mqMaxOvf) { mqOffset = 0; mqPause = MQ_PAUSE; }
+    }
+
+    protected void keyPressed(int keyCode) {
+        int count  = pm.getTrackCount();
+        if (count == 0) return;
+        int action = getGameAction(keyCode);
+        if (action == UP) {
+            if (selectedIndex > 0) {
+                selectedIndex--;
+                mqReset();
+                ensureVisible(selectedIndex);
+                repaint();
+            }
+        } else if (action == DOWN) {
+            if (selectedIndex < count - 1) {
+                selectedIndex++;
+                mqReset();
+                ensureVisible(selectedIndex);
+                repaint();
+            }
+        } else if (action == FIRE) {
+            jumpToSelected();
+        }
+    }
+
+    protected void keyRepeated(int keyCode) { keyPressed(keyCode); }
+
+    private void jumpToSelected() {
+        pm.play(selectedIndex);
+        display.setCurrent(backScreen);
+        // Restore listener — NowPlayingScreen will re-register itself on setCurrent
+        pm.setListener(prevListener);
+    }
+
+    // -------------------------------------------------------------------------
+    // Commands
+    // -------------------------------------------------------------------------
+
+    public void commandAction(Command c, Displayable d) {
+        if (c == CMD_BACK) {
+            pm.setListener(prevListener);
+            display.setCurrent(backScreen);
+        } else if (c == CMD_PLAY) {
+            jumpToSelected();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Paint
+    // -------------------------------------------------------------------------
+
+    protected void paint(Graphics g) {
+        int w = getWidth();
+        int h = getHeight();
+
+        g.setColor(COLOR_BG);
+        g.fillRect(0, 0, w, h);
+
+        // Header
+        int hdrH = HDR_FONT.getHeight() + PAD * 2;
+        g.setColor(COLOR_HEADER);
+        g.fillRect(0, 0, w, hdrH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, hdrH, w, hdrH);
+        g.setFont(HDR_FONT);
+        g.setColor(COLOR_TEXT1);
+        g.drawString("Queue", w / 2, PAD, Graphics.HCENTER | Graphics.TOP);
+
+        // Track count sub-label
+        int count = pm.getTrackCount();
+        g.setFont(SUB_FONT);
+        g.setColor(COLOR_TEXT2);
+        g.drawString(count + " tracks", w / 2, PAD + HDR_FONT.getHeight(),
+                     Graphics.HCENTER | Graphics.TOP);
+
+        int listTop = hdrH + 1;
+        int listH   = h - listTop;
+        int itemH   = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
+        int numW    = NUM_FONT.stringWidth("999") + PAD;
+        int visible = listH / itemH + 2;
+        int end     = Math.min(count, scrollOffset + visible);
+        int textX   = numW + PAD / 2;
+        int availW  = w - textX - PAD - 3;
+
+        // Clip to list area
+        int cx = g.getClipX(), cy = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
+        g.setClip(0, listTop, w, listH);
+
+        for (int i = scrollOffset; i < end; i++) {
+            int y       = listTop + (i - scrollOffset) * itemH;
+            boolean cur = (i == currentIndex);
+            boolean sel = (i == selectedIndex);
+
+            // Row background
+            if (sel) {
+                g.setColor(COLOR_SEL_BG);
+                g.fillRect(0, y, w, itemH);
+            }
+
+            // Accent left bar for currently playing track
+            if (cur) {
+                g.setColor(COLOR_ACCENT);
+                g.fillRect(0, y, 3, itemH);
+            }
+
+            // Track number
+            g.setFont(NUM_FONT);
+            g.setColor(cur ? COLOR_ACCENT : COLOR_TEXT2);
+            g.drawString(String.valueOf(i + 1), numW - PAD / 2, y + PAD,
+                         Graphics.RIGHT | Graphics.TOP);
+
+            // Track name
+            g.setFont(NAME_FONT);
+            g.setColor(cur ? COLOR_ACCENT : COLOR_TEXT1);
+            String name   = pm.getTrackName(i);
+            String artist = pm.getTrackArtist(i);
+
+
+            if (sel) {
+                int ovf = NAME_FONT.stringWidth(name) - availW;
+                if (artist != null && artist.length() > 0)
+                    ovf = Math.max(ovf, SUB_FONT.stringWidth(artist) - availW);
+                mqMaxOvf = ovf > 0 ? ovf + 16 : 0;
+            }
+
+            if (sel && NAME_FONT.stringWidth(name) > availW) {
+                int scx = g.getClipX(), scy = g.getClipY(), scw = g.getClipWidth(), sch = g.getClipHeight();
+                g.setClip(textX, y + PAD, availW, NAME_FONT.getHeight());
+                g.drawString(name, textX - mqOffset, y + PAD, Graphics.LEFT | Graphics.TOP);
+                g.setClip(scx, scy, scw, sch);
+            } else {
+                g.drawString(clip(name, NAME_FONT, availW), textX, y + PAD,
+                             Graphics.LEFT | Graphics.TOP);
+            }
+
+            // Artist
+            g.setFont(SUB_FONT);
+            g.setColor(COLOR_TEXT2);
+            if (artist != null && artist.length() > 0) {
+                int subY = y + PAD + NAME_FONT.getHeight();
+                if (sel && SUB_FONT.stringWidth(artist) > availW) {
+                    int scx = g.getClipX(), scy = g.getClipY(), scw = g.getClipWidth(), sch = g.getClipHeight();
+                    g.setClip(textX, subY, availW, SUB_FONT.getHeight());
+                    g.drawString(artist, textX - mqOffset, subY, Graphics.LEFT | Graphics.TOP);
+                    g.setClip(scx, scy, scw, sch);
+                } else {
+                    g.drawString(clip(artist, SUB_FONT, availW), textX, subY,
+                                 Graphics.LEFT | Graphics.TOP);
+                }
+            }
+
+            // Divider
+            g.setColor(COLOR_DIVIDER);
+            g.drawLine(numW, y + itemH - 1, w - PAD, y + itemH - 1);
+        }
+
+        // Scroll bar
+        if (count > 0 && listH > 0) {
+            int barH = Math.max(8, listH * Math.min(count, visible) / count);
+            int barY = listTop + (listH - barH) * scrollOffset / Math.max(1, count - visible);
+            g.setColor(COLOR_DIVIDER);
+            g.fillRect(w - 3, listTop, 3, listH);
+            g.setColor(COLOR_ACCENT);
+            g.fillRect(w - 3, barY, 3, barH);
+        }
+
+        g.setClip(cx, cy, cw, ch);
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private void ensureVisible(int index) {
+        int h       = getHeight();
+        int hdrH    = HDR_FONT.getHeight() + PAD * 2;
+        int listH   = h - hdrH - 1;
+        int itemH   = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
+        if (itemH <= 0) return;
+        int visible = listH / itemH;
+        if (visible < 1) visible = 1;
+        if (index < scrollOffset) {
+            scrollOffset = index;
+        } else if (index >= scrollOffset + visible) {
+            scrollOffset = index - visible + 1;
+        }
+    }
+
+    private static String clip(String text, Font font, int maxW) {
+        if (text == null || text.length() == 0) return "";
+        if (font.stringWidth(text) <= maxW) return text;
+        while (text.length() > 1 && font.stringWidth(text + "...") > maxW)
+            text = text.substring(0, text.length() - 1);
+        return text + "...";
+    }
+}

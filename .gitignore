@@ -1,0 +1,10 @@
+build
+res/apple_user_token.txt
+res/apple_dev_token.txt
+res/lastfm_token.json
+nbproject/private/private.properties
+nbproject/private/private.xml
+res/private_key.der
+res/private_key.pem
+res/client_id.bin
+.claude
