@@ -66,11 +66,17 @@ public class SettingsForm extends Canvas implements CommandListener {
     private static final int LR_BB_WIFI    = 8;
 
     // -------------------------------------------------------------------------
-    // Commands
+    // Commands  (used only on non-Nokia devices)
     // -------------------------------------------------------------------------
 
     private static final Command CMD_BACK   = new Command("Back",   Command.BACK, 1);
     private static final Command CMD_SELECT = new Command("Select", Command.OK,   1);
+
+    // -------------------------------------------------------------------------
+    // Nokia soft-key bar
+    // -------------------------------------------------------------------------
+
+    private final boolean isNokia;
 
     // -------------------------------------------------------------------------
     // Dependencies
@@ -99,10 +105,13 @@ public class SettingsForm extends Canvas implements CommandListener {
         this.display    = display;
         this.backScreen = backScreen;
         this.pm         = pm;
+        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
         setFullScreenMode(true);
-        addCommand(CMD_BACK);
-        addCommand(CMD_SELECT);
-        setCommandListener(this);
+        if (!isNokia) {
+            addCommand(CMD_BACK);
+            addCommand(CMD_SELECT);
+            setCommandListener(this);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -158,7 +167,8 @@ public class SettingsForm extends Canvas implements CommandListener {
         g.setColor(COLOR_ACCENT);
         g.fillRect(0, HDR_H - 2, w, 2);
 
-        int listH = h - HDR_H;
+        int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int listH = h - HDR_H - skH;
         int cx = g.getClipX(), cy2 = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
         g.setClip(0, HDR_H, w, listH);
 
@@ -207,6 +217,21 @@ public class SettingsForm extends Canvas implements CommandListener {
         }
 
         g.setClip(cx, cy2, cw, ch);
+        if (isNokia) drawSoftKeyBar(g, w, h, skH);
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(COLOR_HDR);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(SUB_FONT);
+        int labelY = barY + (skH - SUB_FONT.getHeight()) / 2;
+        g.setColor(COLOR_TEXT1);
+        g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+        g.setColor(COLOR_TEXT2);
+        g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
     }
 
     // -------------------------------------------------------------------------
@@ -270,13 +295,17 @@ public class SettingsForm extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
+        if (isNokia) {
+            if (keyCode == -6) { activate(logicalRow(selectedIndex)); return; }
+            if (keyCode == -7) { display.setCurrent(backScreen); return; }
+        }
         int action = getGameAction(keyCode);
         int total  = rowCount();
         if (action == UP) {
             if (selectedIndex > 0) { selectedIndex--; ensureVisible(); repaint(); }
         } else if (action == DOWN) {
             if (selectedIndex < total - 1) { selectedIndex++; ensureVisible(); repaint(); }
-        } else if (action == FIRE) {
+        } else if (action == FIRE || keyCode == -5) {
             activate(logicalRow(selectedIndex));
         }
     }
@@ -470,7 +499,8 @@ public class SettingsForm extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     private void ensureVisible() {
-        int listH = getHeight() - HDR_H;
+        int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int listH = getHeight() - HDR_H - skH;
         int vis   = listH / ITEM_H;
         if (vis < 1) vis = 1;
         if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;

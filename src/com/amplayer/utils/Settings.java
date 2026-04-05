@@ -61,6 +61,59 @@ public class Settings {
     // -------------------------------------------------------------------------
     // Load / save
     // -------------------------------------------------------------------------
+    
+      private static boolean hasClass(String s) {
+        try {
+          Class.forName(s);
+          return true;
+        } catch (ClassNotFoundException e) {
+          return false;
+        }
+      }
+      
+      private static boolean hasProperty(String propertyName) {
+            return System.getProperty(propertyName) != null;
+      }
+
+      public static String getDeviceEnvironment() {
+            String platform = System.getProperty("microedition.platform");
+            String env = "other";
+
+            // Check Symbian variants
+            boolean symbianJrt = platform != null && platform.indexOf("platform=S60") != -1;
+            boolean symbian =
+                symbianJrt
+                    || hasProperty("com.symbian.midp.serversocket.support")
+                    || hasProperty("com.symbian.default.to.suite.icon")
+                    || hasClass("com.symbian.midp.io.protocol.http.Protocol")
+                    || hasClass("com.symbian.lcdjava.io.File");
+
+             
+
+            // Nokia S40 detection
+            if (hasClass("com.nokia.mid.impl.isa.jam.Jam")) {
+                env = "nokia_s40";
+            }
+            // Symbian-specific logic
+            else if (symbian) {
+                if (symbianJrt
+                    && platform != null
+                    && (platform.indexOf("java_build_version=2.") != -1
+                        || platform.indexOf("java_build_version=1.4") != -1)) {
+                    // EMC (S60v5+) supports mp3 streaming - keep default URL method
+                } else if (hasClass("com.symbian.mmapi.PlayerImpl")) {
+                    // UIQ - use InputStream
+                    env = "uiq";
+                }  else {
+                    env = "nokia_s60";
+                }
+            }
+            // J2ME Loader
+            else if (hasClass("javax.microedition.shell.MicroActivity")) {
+                env = "j2me_loader";
+            }
+            return env;
+        }
 
     /** Load persisted settings. Call once at startup. */
     public static void load() {

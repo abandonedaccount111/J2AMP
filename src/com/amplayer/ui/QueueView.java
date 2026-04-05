@@ -40,11 +40,20 @@ public class QueueView extends Canvas
     private static final int PAD = 8;
 
     // -------------------------------------------------------------------------
-    // Commands
+    // Commands  (used only on non-Nokia devices)
     // -------------------------------------------------------------------------
 
     private static final Command CMD_BACK = new Command("Back", Command.BACK, 1);
     private static final Command CMD_PLAY = new Command("Play", Command.OK,   1);
+
+    // -------------------------------------------------------------------------
+    // Nokia soft-key menu
+    // -------------------------------------------------------------------------
+
+    private static final String[] NOKIA_MENU_ITEMS = { "Play" };
+    private final boolean isNokia;
+    private boolean nokiaMenuOpen = false;
+    private int     nokiaMenuSel  = 0;
 
     // -------------------------------------------------------------------------
     // Dependencies
@@ -88,10 +97,15 @@ public class QueueView extends Canvas
         scrollOffset  = 0;
         ensureVisible(selectedIndex);
 
-        setFullScreenMode(true);
-        addCommand(CMD_BACK);
-        addCommand(CMD_PLAY);
-        setCommandListener(this);
+        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
+        if (!isNokia) {
+            addCommand(CMD_BACK);
+            addCommand(CMD_PLAY);
+            setCommandListener(this);
+                setFullScreenMode(false);
+        } else {
+                setFullScreenMode(true);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -146,6 +160,44 @@ public class QueueView extends Canvas
     }
 
     protected void keyPressed(int keyCode) {
+        if (isNokia) {
+            if (keyCode == -6) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                } else {
+                    nokiaMenuOpen = true;
+                    nokiaMenuSel  = 0;
+                }
+                repaint();
+                return;
+            }
+            if (keyCode == -7) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    repaint();
+                } else {
+                    pm.setListener(prevListener);
+                    display.setCurrent(backScreen);
+                }
+                return;
+            }
+            if (nokiaMenuOpen) {
+                int action = getGameAction(keyCode);
+                if (action == UP && nokiaMenuSel > 0) {
+                    nokiaMenuSel--;
+                    repaint();
+                } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
+                    nokiaMenuSel++;
+                    repaint();
+                } else if (action == FIRE || keyCode == -5) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                    repaint();
+                }
+                return;
+            }
+        }
         int count  = pm.getTrackCount();
         if (count == 0) return;
         int action = getGameAction(keyCode);
@@ -163,8 +215,58 @@ public class QueueView extends Canvas
                 ensureVisible(selectedIndex);
                 repaint();
             }
-        } else if (action == FIRE) {
+        } else if (action == FIRE || keyCode == -5) {
             jumpToSelected();
+        }
+    }
+
+    private void executeNokiaMenuItem(int index) {
+        if (index == 0) jumpToSelected(); // Play
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(COLOR_HEADER);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(SUB_FONT);
+        int labelY = barY + (skH - SUB_FONT.getHeight()) / 2;
+        if (nokiaMenuOpen) {
+            g.setColor(COLOR_TEXT1);
+            g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_TEXT2);
+            g.drawString("Close", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        } else {
+            g.setColor(COLOR_TEXT1);
+            g.drawString("Options", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_TEXT2);
+            g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        }
+    }
+
+    private void drawNokiaMenu(Graphics g, int w, int h) {
+        int itemH  = NAME_FONT.getHeight() + 6;
+        int skH    = SUB_FONT.getHeight() + PAD * 2;
+        int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+        int menuY  = h - skH - menuH;
+
+        g.setColor(COLOR_HEADER);
+        g.fillRect(0, menuY, w, menuH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, menuY, w, 1);
+
+        for (int i = 0; i < NOKIA_MENU_ITEMS.length; i++) {
+            int y = menuY + PAD + i * itemH;
+            if (i == nokiaMenuSel) {
+                g.setColor(COLOR_ACCENT);
+                g.fillRect(0, y - 2, w, itemH);
+                g.setColor(COLOR_BG);
+            } else {
+                g.setColor(COLOR_TEXT1);
+            }
+            g.setFont(NAME_FONT);
+            g.drawString(NOKIA_MENU_ITEMS[i], PAD, y, Graphics.LEFT | Graphics.TOP);
         }
     }
 
@@ -219,7 +321,8 @@ public class QueueView extends Canvas
                      Graphics.HCENTER | Graphics.TOP);
 
         int listTop = hdrH + 1;
-        int listH   = h - listTop;
+        int skH     = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int listH   = h - listTop - skH;
         int itemH   = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
         int numW    = NUM_FONT.stringWidth("999") + PAD;
         int visible = listH / itemH + 2;
@@ -310,6 +413,7 @@ public class QueueView extends Canvas
         }
 
         g.setClip(cx, cy, cw, ch);
+        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
     }
 
     // -------------------------------------------------------------------------
@@ -319,7 +423,8 @@ public class QueueView extends Canvas
     private void ensureVisible(int index) {
         int h       = getHeight();
         int hdrH    = HDR_FONT.getHeight() + PAD * 2;
-        int listH   = h - hdrH - 1;
+        int skH     = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int listH   = h - hdrH - 1 - skH;
         int itemH   = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
         if (itemH <= 0) return;
         int visible = listH / itemH;

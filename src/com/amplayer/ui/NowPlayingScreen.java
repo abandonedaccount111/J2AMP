@@ -117,6 +117,18 @@ public class NowPlayingScreen extends Canvas
     private volatile boolean marqueeRunning = false;
 
     // -------------------------------------------------------------------------
+    // Nokia soft-key menu
+    // -------------------------------------------------------------------------
+
+    private static final String[] NOKIA_MENU_ITEMS = {
+        "Lyrics", "Queue", "Shuffle", "Repeat",
+        "Go to Artist", "Go to Album", "Go to Playlist", "Visualizer"
+    };
+    private final boolean isNokia;
+    private boolean nokiaMenuOpen = false;
+    private int     nokiaMenuSel  = 0;
+
+    // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
@@ -129,23 +141,28 @@ public class NowPlayingScreen extends Canvas
         this.midlet     = midlet;
 
         pm.setListener(this);
+        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
 
-        // Full-screen mode: prevents S60 from mapping the center/OK key to the
-        // Options softkey.  BACK is still reachable via the right hardware key.
-        setFullScreenMode(true);
+        
 
-        addCommand(CMD_BACK);
-        addCommand(CMD_PREV);
-        addCommand(CMD_NEXT);
-        addCommand(CMD_LYRICS);
-        addCommand(CMD_QUEUE);
-        addCommand(CMD_SHUFFLE);
-        addCommand(CMD_REPEAT);
-        addCommand(CMD_GO_TO_ARTIST);
-        addCommand(CMD_GO_TO_ALBUM);
-        addCommand(CMD_GO_TO_PLAYLIST);
-        addCommand(CMD_VISUALIZER);
-        setCommandListener(this);
+        if (!isNokia) {
+                addCommand(CMD_BACK);
+                addCommand(CMD_PREV);
+                addCommand(CMD_NEXT);
+                addCommand(CMD_LYRICS);
+                addCommand(CMD_QUEUE);
+                addCommand(CMD_SHUFFLE);
+                addCommand(CMD_REPEAT);
+                addCommand(CMD_GO_TO_ARTIST);
+                addCommand(CMD_GO_TO_ALBUM);
+                addCommand(CMD_GO_TO_PLAYLIST);
+                addCommand(CMD_VISUALIZER);
+                setCommandListener(this);
+                setFullScreenMode(false);
+        } else {
+                setFullScreenMode(true);
+        }
+
 
         trackName    = pm.getCurrentName();
         trackArtist  = pm.getCurrentArtist();
@@ -380,9 +397,12 @@ public class NowPlayingScreen extends Canvas
         g.setColor(COLOR_BG);
         g.fillRect(0, 0, w, h);
 
+        // Soft-key label bar (Nokia only) — reserve space at very bottom
+        int skH   = isNokia ? SMALL_FONT.getHeight() + PAD * 2 : 0;
+
         // Controls bar at bottom (same for both layouts)
         int ctrlH  = NAME_FONT.getHeight() + PAD * 3;
-        int ctrlY  = h - ctrlH;
+        int ctrlY  = h - ctrlH - skH;
         g.setColor(COLOR_CTRL_BG);
         g.fillRect(0, ctrlY, w, ctrlH);
         g.setColor(COLOR_DIVIDER);
@@ -498,6 +518,30 @@ public class NowPlayingScreen extends Canvas
 
             drawProgressBar(g, barX, barY, barW, barH, pos, dur);
         }
+
+        if (isNokia) drawSoftKeyBar(g, w, h, skH);
+        if (isNokia && nokiaMenuOpen) drawNokiaMenu(g, w, h);
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(COLOR_CTRL_BG);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(SMALL_FONT);
+        int labelY = barY + (skH - SMALL_FONT.getHeight()) / 2;
+        if (nokiaMenuOpen) {
+            g.setColor(COLOR_TEXT1);
+            g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_TEXT2);
+            g.drawString("Close", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        } else {
+            g.setColor(COLOR_TEXT1);
+            g.drawString("Options", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_TEXT2);
+            g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        }
     }
 
     /**
@@ -589,6 +633,50 @@ public class NowPlayingScreen extends Canvas
     private static final long SEEK_STEP_MS = 10000L; // 10 s per repeated key event
 
     protected void keyPressed(int keyCode) {
+        if (isNokia) {
+            if (keyCode == -6) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                } else {
+                    nokiaMenuOpen = true;
+                    nokiaMenuSel  = 0;
+                }
+                repaint();
+                return;
+            }
+            if (keyCode == -7) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    repaint();
+                } else {
+                    stopProgressTimer();
+                    display.setCurrent(backScreen);
+                }
+                return;
+            }
+            if (nokiaMenuOpen) {
+                System.out.println("Nokia menu key event: " + keyCode);
+                int action = getGameAction(keyCode);
+                if (action == UP && nokiaMenuSel > 0) {
+                    nokiaMenuSel--;
+                    repaint();
+                } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
+                    nokiaMenuSel++;
+                    repaint();
+                } else if (action == FIRE || keyCode == -5) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                    repaint();
+                }
+                return;
+            }
+            if (keyCode == -5) {
+                if (pm.isPlaying()) pm.pause(); else pm.resume();
+                repaint();
+                return;
+            }
+        }
         int action = getGameAction(keyCode);
         switch (action) {
             case FIRE:
@@ -608,6 +696,68 @@ public class NowPlayingScreen extends Canvas
             case KEY_NUM5: if (pm.isPlaying()) pm.pause(); else pm.resume();
                            repaint();                                          break;
             case KEY_NUM6: pm.next();                                          break;
+        }
+    }
+
+    private void executeNokiaMenuItem(int index) {
+        switch (index) {
+            case 0: { // Lyrics
+                AMAPI a = api;
+                if (a == null) return;
+                String sid = pm.getCurrentId();
+                if (sid == null || sid.length() == 0) return;
+                display.setCurrent(new LyricsView(
+                    a, a.getStorefront(), sid, pm, display, this, trackName));
+                break;
+            }
+            case 1: // Queue
+                display.setCurrent(new QueueView(pm, display, this));
+                break;
+            case 2: // Shuffle
+                pm.toggleShuffle();
+                repaint();
+                break;
+            case 3: // Repeat
+                pm.cycleRepeat();
+                repaint();
+                break;
+            case 4: // Go to Artist
+                goToArtist();
+                break;
+            case 5: // Go to Album
+                goToAlbum();
+                break;
+            case 6: // Go to Playlist
+                goToPlaylist();
+                break;
+            case 7: // Visualizer
+                if (midlet != null) midlet.showVisualizer(this);
+                break;
+        }
+    }
+
+    private void drawNokiaMenu(Graphics g, int w, int h) {
+        int itemH  = SMALL_FONT.getHeight() + 6;
+        int skH    = SMALL_FONT.getHeight() + PAD * 2;
+        int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+        int menuY  = h - skH - menuH;
+
+        g.setColor(COLOR_CTRL_BG);
+        g.fillRect(0, menuY, w, menuH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, menuY, w, 1);
+
+        for (int i = 0; i < NOKIA_MENU_ITEMS.length; i++) {
+            int y = menuY + PAD + i * itemH;
+            if (i == nokiaMenuSel) {
+                g.setColor(COLOR_ACCENT);
+                g.fillRect(0, y - 2, w, itemH);
+                g.setColor(COLOR_BG);
+            } else {
+                g.setColor(COLOR_TEXT1);
+            }
+            g.setFont(SMALL_FONT);
+            g.drawString(NOKIA_MENU_ITEMS[i], PAD, y, Graphics.LEFT | Graphics.TOP);
         }
     }
 

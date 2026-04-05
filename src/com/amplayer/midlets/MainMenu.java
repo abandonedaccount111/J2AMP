@@ -1,6 +1,7 @@
 package com.amplayer.midlets;
 
 import com.amplayer.playback.PlaybackManager;
+import com.amplayer.utils.Settings;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
@@ -72,7 +73,7 @@ public class MainMenu extends Canvas implements CommandListener {
     private int scrollOffset  = 0;   // first visible item index
 
     // -------------------------------------------------------------------------
-    // Commands
+    // Commands  (used only on non-Nokia devices)
     // -------------------------------------------------------------------------
 
     private static final Command CMD_SELECT = new Command("Select", Command.OK,   1);
@@ -83,6 +84,12 @@ public class MainMenu extends Canvas implements CommandListener {
     private       PlaybackManager  pm;  // set after PM is created; used for live track subtext
 
     // -------------------------------------------------------------------------
+    // Nokia soft-key bar
+    // -------------------------------------------------------------------------
+
+    private final boolean isNokia;
+
+    // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
@@ -91,9 +98,15 @@ public class MainMenu extends Canvas implements CommandListener {
         setTitle("J2AMP");
         this.midlet  = midlet;
         this.display = display;
-        addCommand(CMD_SELECT);
-        addCommand(CMD_EXIT);
-        setCommandListener(this);
+        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
+        if (!isNokia) {
+            addCommand(CMD_SELECT);
+            addCommand(CMD_EXIT);
+            setCommandListener(this);
+            setFullScreenMode(false);
+        } else {
+            setFullScreenMode(true);
+        }
     }
 
     /** Called once the PlaybackManager is ready so the Now Playing row can show live info. */
@@ -108,7 +121,8 @@ public class MainMenu extends Canvas implements CommandListener {
     protected void paint(Graphics g) {
         int w     = getWidth();
         int h     = getHeight();
-        int listH = h - TITLE_BAR_H;
+        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int listH = h - TITLE_BAR_H - skH;
 
         // Background
         g.setColor(COLOR_BG);
@@ -174,6 +188,21 @@ public class MainMenu extends Canvas implements CommandListener {
 
         // Restore clip
         g.setClip(cx, cy, cw, ch);
+        if (isNokia) drawSoftKeyBar(g, w, h, skH);
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(0x111111);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(SUBNAME_FONT);
+        int labelY = barY + (skH - SUBNAME_FONT.getHeight()) / 2;
+        g.setColor(COLOR_NAME);
+        g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+        g.setColor(COLOR_SUBNAME);
+        g.drawString("Exit", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
     }
 
     // -------------------------------------------------------------------------
@@ -181,6 +210,10 @@ public class MainMenu extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
+        if (isNokia) {
+            if (keyCode == -6) { fireSelection(); return; }
+            if (keyCode == -7) { midlet.notifyDestroyed(); return; }
+        }
         int action = getGameAction(keyCode);
         if (action == UP) {
             if (selectedIndex > 0) {
@@ -191,14 +224,14 @@ public class MainMenu extends Canvas implements CommandListener {
         } else if (action == DOWN) {
             if (selectedIndex < LABELS.length - 1) {
                 selectedIndex++;
-                int h     = getHeight();
-                int listH = h - TITLE_BAR_H;
+                int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+                int listH = getHeight() - TITLE_BAR_H - skH;
                 int vis   = listH / ITEM_H;
                 if (selectedIndex >= scrollOffset + vis)
                     scrollOffset = selectedIndex - vis + 1;
                 repaint();
             }
-        } else if (action == FIRE) {
+        } else if (action == FIRE || keyCode == -5) {
             fireSelection();
         }
     }

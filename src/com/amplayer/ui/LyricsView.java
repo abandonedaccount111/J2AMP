@@ -4,6 +4,7 @@ import cc.nnproject.json.JSONArray;
 import cc.nnproject.json.JSONObject;
 import com.amplayer.api.AMAPI;
 import com.amplayer.playback.PlaybackManager;
+import com.amplayer.utils.Settings;
 import java.util.Vector;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
@@ -45,10 +46,19 @@ public class LyricsView extends Canvas
     private static final int LINE_GAP = 10;  // vertical gap between logical lines
 
     // -------------------------------------------------------------------------
-    // Commands
+    // Commands  (used only on non-Nokia devices)
     // -------------------------------------------------------------------------
 
     private static final Command CMD_BACK = new Command("Back", Command.BACK, 1);
+
+    // -------------------------------------------------------------------------
+    // Nokia soft-key menu
+    // -------------------------------------------------------------------------
+
+    private static final String[] NOKIA_MENU_ITEMS = { "Back" };
+    private final boolean isNokia;
+    private boolean nokiaMenuOpen = false;
+    private int     nokiaMenuSel  = 0;
 
     // -------------------------------------------------------------------------
     // Dependencies
@@ -117,9 +127,12 @@ public class LyricsView extends Canvas
         prevListener = pm.getListener();
         pm.setListener(this);
 
+        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
         setFullScreenMode(true);
-        addCommand(CMD_BACK);
-        setCommandListener(this);
+        if (!isNokia) {
+            addCommand(CMD_BACK);
+            setCommandListener(this);
+        }
 
         fetchLyrics(songId);
         startTimer();
@@ -430,7 +443,8 @@ public class LyricsView extends Canvas
                      w / 2, PAD, Graphics.HCENTER | Graphics.TOP);
 
         int lyricsTop = hdrH + 1;
-        int lyricsH   = h - lyricsTop;
+        int skH       = isNokia ? LINE_FONT.getHeight() + PAD * 2 : 0;
+        int lyricsH   = h - lyricsTop - skH;
         int maxW      = w - PAD * 4;
 
         // Loading / error
@@ -444,6 +458,7 @@ public class LyricsView extends Canvas
             g.setColor(COLOR_FUTURE);
             g.drawString(statusText, w / 2, lyricsTop + lyricsH / 2,
                          Graphics.HCENTER | Graphics.BASELINE);
+            if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
             return;
         }
 
@@ -510,6 +525,7 @@ public class LyricsView extends Canvas
         }
 
         g.setClip(cx, cy, cw, ch);
+        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
     }
 
     // -------------------------------------------------------------------------
@@ -519,6 +535,43 @@ public class LyricsView extends Canvas
     private static final long SEEK_STEP_MS = 10000L; // 10 s per repeated event
 
     protected void keyPressed(int keyCode) {
+        if (isNokia) {
+            if (keyCode == -6) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    goBack();
+                } else {
+                    nokiaMenuOpen = true;
+                    nokiaMenuSel  = 0;
+                }
+                repaint();
+                return;
+            }
+            if (keyCode == -7) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    repaint();
+                } else {
+                    goBack();
+                }
+                return;
+            }
+            if (nokiaMenuOpen) {
+                int action = getGameAction(keyCode);
+                if (action == UP && nokiaMenuSel > 0) {
+                    nokiaMenuSel--;
+                    repaint();
+                } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
+                    nokiaMenuSel++;
+                    repaint();
+                } else if (action == FIRE || keyCode == -5) {
+                    nokiaMenuOpen = false;
+                    goBack();
+                    repaint();
+                }
+                return;
+            }
+        }
         int action = getGameAction(keyCode);
         switch (action) {
             case FIRE:
@@ -538,6 +591,58 @@ public class LyricsView extends Canvas
         }
     }
 
+    private void goBack() {
+        timerActive = false;
+        pm.setListener(prevListener);
+        display.setCurrent(backScreen);
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(COLOR_HEADER);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(LINE_FONT);
+        int labelY = barY + (skH - LINE_FONT.getHeight()) / 2;
+        if (nokiaMenuOpen) {
+            g.setColor(COLOR_ACTIVE);
+            g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_FUTURE);
+            g.drawString("Close", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        } else {
+            g.setColor(COLOR_ACTIVE);
+            g.drawString("Options", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_FUTURE);
+            g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        }
+    }
+
+    private void drawNokiaMenu(Graphics g, int w, int h) {
+        int itemH  = LINE_FONT.getHeight() + 6;
+        int skH    = LINE_FONT.getHeight() + PAD * 2;
+        int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+        int menuY  = h - skH - menuH;
+
+        g.setColor(COLOR_HEADER);
+        g.fillRect(0, menuY, w, menuH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, menuY, w, 1);
+
+        for (int i = 0; i < NOKIA_MENU_ITEMS.length; i++) {
+            int y = menuY + PAD + i * itemH;
+            if (i == nokiaMenuSel) {
+                g.setColor(COLOR_ACTIVE);
+                g.fillRect(0, y - 2, w, itemH);
+                g.setColor(COLOR_BG);
+            } else {
+                g.setColor(COLOR_ACTIVE);
+            }
+            g.setFont(LINE_FONT);
+            g.drawString(NOKIA_MENU_ITEMS[i], PAD, y, Graphics.LEFT | Graphics.TOP);
+        }
+    }
+
     protected void keyRepeated(int keyCode) {
         int action = getGameAction(keyCode);
         if (action == LEFT || keyCode == KEY_NUM4) {
@@ -552,10 +657,6 @@ public class LyricsView extends Canvas
     // -------------------------------------------------------------------------
 
     public void commandAction(Command c, Displayable d) {
-        if (c == CMD_BACK) {
-            timerActive = false;
-            pm.setListener(prevListener);  // restore NowPlayingScreen as PM listener
-            display.setCurrent(backScreen);
-        }
+        if (c == CMD_BACK) goBack();
     }
 }

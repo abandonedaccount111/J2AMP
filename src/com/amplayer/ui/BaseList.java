@@ -5,6 +5,7 @@ import cc.nnproject.json.JSONObject;
 import com.amplayer.utils.Settings;
 import java.util.Enumeration;
 import java.util.Hashtable;
+import java.util.Vector;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
@@ -100,11 +101,21 @@ public class BaseList extends Canvas implements CommandListener {
     private volatile boolean mqRunning = false;
 
     // -------------------------------------------------------------------------
-    // Commands
+    // Commands  (used only on non-Nokia devices)
     // -------------------------------------------------------------------------
 
     private static final Command CMD_SELECT = new Command("Select", Command.OK,   1);
     private static final Command CMD_BACK   = new Command("Back",   Command.BACK, 1);
+
+    // -------------------------------------------------------------------------
+    // Nokia soft-key menu
+    // -------------------------------------------------------------------------
+
+    private final boolean isNokia;
+    private boolean nokiaMenuOpen = false;
+    private int     nokiaMenuSel  = 0;
+    /** Ordered context items for nokia menu: each element is String[]{label, tag}. */
+    private final Vector nokiaContextItems = new Vector();
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -115,9 +126,15 @@ public class BaseList extends Canvas implements CommandListener {
         setTitle(title);
         this.listener = listener;
         loadItems(items);
-        addCommand(CMD_SELECT);
-        addCommand(CMD_BACK);
-        setCommandListener(this);
+        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
+        if (!isNokia) {
+            addCommand(CMD_SELECT);
+            addCommand(CMD_BACK);
+            setCommandListener(this);
+            setFullScreenMode(false);
+        } else {
+            setFullScreenMode(true);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -163,7 +180,8 @@ public class BaseList extends Canvas implements CommandListener {
     protected void paint(Graphics g) {
         int w     = getWidth();
         int h     = getHeight();
-        int listH = h - TITLE_BAR_H;
+        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int listH = h - TITLE_BAR_H - skH;
 
         // Background
         g.setColor(COLOR_BG);
@@ -266,6 +284,7 @@ public class BaseList extends Canvas implements CommandListener {
 
         // Restore clip
         g.setClip(cx, cy, cw, ch);
+        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
     }
 
     // -------------------------------------------------------------------------
@@ -273,10 +292,119 @@ public class BaseList extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
+        if (isNokia) {
+            if (keyCode == -6) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                } else {
+                    nokiaMenuOpen = true;
+                    nokiaMenuSel  = 0;
+                }
+                repaint();
+                return;
+            }
+            if (keyCode == -7) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    repaint();
+                } else if (backAction != null) {
+                    backAction.run();
+                }
+                return;
+            }
+            if (nokiaMenuOpen) {
+                int menuSize = 1 + nokiaContextItems.size();
+                int action = getGameAction(keyCode);
+                if (action == UP && nokiaMenuSel > 0) {
+                    nokiaMenuSel--;
+                    repaint();
+                } else if (action == DOWN && nokiaMenuSel < menuSize - 1) {
+                    nokiaMenuSel++;
+                    repaint();
+                } else if (action == FIRE || keyCode == -5) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                    repaint();
+                }
+                return;
+            }
+        }
         int action = getGameAction(keyCode);
         if      (action == UP)   moveUp();
         else if (action == DOWN) moveDown();
-        else if (action == FIRE) fireSelection();
+        else if (action == FIRE || keyCode == -5) fireSelection();
+    }
+
+    private void executeNokiaMenuItem(int index) {
+        if (index == 0) {
+            fireSelection();
+        } else {
+            int ci = index - 1;
+            if (ci < nokiaContextItems.size() && contextListener != null
+                    && selectedIndex >= 0 && selectedIndex < count
+                    && !"header".equals(types[selectedIndex])) {
+                String tag = ((String[]) nokiaContextItems.elementAt(ci))[1];
+                contextListener.onContextAction(
+                    selectedIndex, types[selectedIndex],
+                    names[selectedIndex], subnames[selectedIndex],
+                    actions[selectedIndex], tag);
+            }
+        }
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(COLOR_HEADER_BG);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(SUBNAME_FONT);
+        int labelY = barY + (skH - SUBNAME_FONT.getHeight()) / 2;
+        if (nokiaMenuOpen) {
+            g.setColor(COLOR_NAME);
+            g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_SUBNAME);
+            g.drawString("Close", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        } else {
+            g.setColor(COLOR_NAME);
+            g.drawString("Options", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_SUBNAME);
+            g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        }
+    }
+
+    private void drawNokiaMenu(Graphics g, int w, int h, int skH) {
+        int menuSize = 1 + nokiaContextItems.size();
+        int itemH    = SUBNAME_FONT.getHeight() + 6;
+        int menuH    = itemH * menuSize + PAD * 2;
+        int menuY    = h - skH - menuH;
+
+        g.setColor(COLOR_HEADER_BG);
+        g.fillRect(0, menuY, w, menuH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, menuY, w, 1);
+
+        // Item 0: Select
+        paintNokiaMenuItem(g, w, menuY, 0, itemH, "Select");
+        // Context items
+        for (int i = 0; i < nokiaContextItems.size(); i++) {
+            String label = ((String[]) nokiaContextItems.elementAt(i))[0];
+            paintNokiaMenuItem(g, w, menuY, i + 1, itemH, label);
+        }
+    }
+
+    private void paintNokiaMenuItem(Graphics g, int w, int menuY, int idx, int itemH, String label) {
+        int y = menuY + PAD + idx * itemH;
+        if (idx == nokiaMenuSel) {
+            g.setColor(COLOR_ACCENT);
+            g.fillRect(0, y - 2, w, itemH);
+            g.setColor(COLOR_BG);
+        } else {
+            g.setColor(COLOR_NAME);
+        }
+        g.setFont(SUBNAME_FONT);
+        g.drawString(label, PAD, y, Graphics.LEFT | Graphics.TOP);
     }
 
     protected void keyRepeated(int keyCode) {
@@ -336,7 +464,8 @@ public class BaseList extends Canvas implements CommandListener {
 
     /** Scroll so selectedIndex is fully in view. */
     private void ensureVisible() {
-        int listH = getHeight() - TITLE_BAR_H;
+        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int listH = getHeight() - TITLE_BAR_H - skH;
         int absY  = itemYPos[selectedIndex];
         int ih    = itemHeights[selectedIndex];
         if (absY < scrollPx) {
@@ -385,8 +514,12 @@ public class BaseList extends Canvas implements CommandListener {
      * currently selected item.
      */
     public void addContextCommand(Command cmd, String actionTag) {
-        contextCommandMap.put(cmd, actionTag);
-        addCommand(cmd);
+        if (isNokia) {
+            nokiaContextItems.addElement(new String[]{ cmd.getLabel(), actionTag });
+        } else {
+            contextCommandMap.put(cmd, actionTag);
+            addCommand(cmd);
+        }
     }
 
     private static String clip(String text, Font font, int maxW) {

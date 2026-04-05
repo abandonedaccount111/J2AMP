@@ -60,7 +60,7 @@ public class DetailView extends Canvas implements CommandListener {
     private int colorText4 = 0x8E8E93;   // textColor4 — track artists (playlists)
 
     // -------------------------------------------------------------------------
-    // Commands
+    // Commands  (used only on non-Nokia devices)
     // -------------------------------------------------------------------------
 
     private static final Command CMD_BACK           = new Command("Back",           Command.BACK, 1);
@@ -69,6 +69,16 @@ public class DetailView extends Canvas implements CommandListener {
     private static final Command CMD_GO_TO_ALBUM    = new Command("Go to Album",    Command.ITEM, 3);
     private static final Command CMD_PLAY_NEXT      = new Command("Play Next",      Command.ITEM, 4);
     private static final Command CMD_ADD_TO_QUEUE   = new Command("Add to Queue",   Command.ITEM, 5);
+
+    // -------------------------------------------------------------------------
+    // Nokia soft-key menu
+    // -------------------------------------------------------------------------
+
+    private final boolean isNokia;
+    private boolean nokiaMenuOpen = false;
+    private int     nokiaMenuSel  = 0;
+    // Built in constructor based on isPlaylist
+    private final String[] nokiaMenuItems;
 
     // -------------------------------------------------------------------------
     // Immutable identity
@@ -142,13 +152,24 @@ public class DetailView extends Canvas implements CommandListener {
         this.backScreen     = backScreen;
         this.midlet         = midlet;
 
-        addCommand(CMD_BACK);
-        addCommand(CMD_PLAY);
-        addCommand(CMD_GO_TO_ARTIST);
-        if (isPlaylist) addCommand(CMD_GO_TO_ALBUM);
-        addCommand(CMD_PLAY_NEXT);
-        addCommand(CMD_ADD_TO_QUEUE);
-        setCommandListener(this);
+        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
+        if (isPlaylist) {
+            nokiaMenuItems = new String[]{ "Play", "Go to Artist", "Go to Album", "Play Next", "Add to Queue" };
+        } else {
+            nokiaMenuItems = new String[]{ "Play", "Go to Artist", "Play Next", "Add to Queue" };
+        }
+        if (!isNokia) {
+            addCommand(CMD_BACK);
+            addCommand(CMD_PLAY);
+            addCommand(CMD_GO_TO_ARTIST);
+            if (isPlaylist) addCommand(CMD_GO_TO_ALBUM);
+            addCommand(CMD_PLAY_NEXT);
+            addCommand(CMD_ADD_TO_QUEUE);
+            setCommandListener(this);
+            setFullScreenMode(false);
+        } else {
+            setFullScreenMode(true);
+        } 
 
         loadTracks();
     }
@@ -314,7 +335,8 @@ public class DetailView extends Canvas implements CommandListener {
         int h     = getHeight();
         int artH  = h / 3;
         int listY = artH + 2;
-        int listH = h - listY;
+        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int listH = h - listY - skH;
 
         // Full background in bgColor
         g.setColor(colorBg);
@@ -338,6 +360,7 @@ public class DetailView extends Canvas implements CommandListener {
         } else {
             paintTrackList(g, w, listY, listH);
         }
+        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
     }
 
     private void paintArtSection(Graphics g, int w, int artH) {
@@ -497,6 +520,43 @@ public class DetailView extends Canvas implements CommandListener {
     }
 
     protected void keyPressed(int keyCode) {
+        if (isNokia) {
+            if (keyCode == -6) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                } else {
+                    nokiaMenuOpen = true;
+                    nokiaMenuSel  = 0;
+                }
+                repaint();
+                return;
+            }
+            if (keyCode == -7) {
+                if (nokiaMenuOpen) {
+                    nokiaMenuOpen = false;
+                    repaint();
+                } else {
+                    display.setCurrent(backScreen);
+                }
+                return;
+            }
+            if (nokiaMenuOpen) {
+                int action = getGameAction(keyCode);
+                if (action == UP && nokiaMenuSel > 0) {
+                    nokiaMenuSel--;
+                    repaint();
+                } else if (action == DOWN && nokiaMenuSel < nokiaMenuItems.length - 1) {
+                    nokiaMenuSel++;
+                    repaint();
+                } else if (action == FIRE || keyCode == -5) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(nokiaMenuSel);
+                    repaint();
+                }
+                return;
+            }
+        }
         if (!tracksLoaded || trackCount == 0) return;
         int action = getGameAction(keyCode);
         if (action == UP) {
@@ -510,13 +570,13 @@ public class DetailView extends Canvas implements CommandListener {
             if (selectedIndex < trackCount - 1) {
                 selectedIndex++;
                 mqReset();
-                int listH   = getHeight() - getHeight() / 3 - 2;
+                int listH   = getHeight() - getHeight() / 3 - 2 - (isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0);
                 int visible = listH / trackItemH() + 1;
                 if (selectedIndex >= scrollOffset + visible)
                     scrollOffset = selectedIndex - visible + 1;
                 repaint();
             }
-        } else if (action == FIRE) {
+        } else if (action == FIRE || keyCode == -5) {
             onTrackSelected();
         }
     }
@@ -532,6 +592,72 @@ public class DetailView extends Canvas implements CommandListener {
                 id, name, artUrlTemplate);
         } else {
             midlet.playQueue(trackIds, trackNames, trackArtists, artUrlTemplate, selectedIndex);
+        }
+    }
+
+    private void executeNokiaMenuItem(int index) {
+        // Menu order: Play, Go to Artist, [Go to Album if playlist], Play Next, Add to Queue
+        if (isPlaylist) {
+            switch (index) {
+                case 0: onTrackSelected();          break;
+                case 1: goToArtist();               break;
+                case 2: goToAlbum();                break;
+                case 3: queueSelectedTrack(true);   break;
+                case 4: queueSelectedTrack(false);  break;
+            }
+        } else {
+            switch (index) {
+                case 0: onTrackSelected();          break;
+                case 1: goToArtist();               break;
+                case 2: queueSelectedTrack(true);   break;
+                case 3: queueSelectedTrack(false);  break;
+            }
+        }
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(shiftBrightness(colorBg, isLight(colorBg) ? -40 : 40));
+        g.fillRect(0, barY, w, skH);
+        g.setColor(dividerColor());
+        g.drawLine(0, barY, w, barY);
+        g.setFont(SUBNAME_FONT);
+        int labelY = barY + (skH - SUBNAME_FONT.getHeight()) / 2;
+        if (nokiaMenuOpen) {
+            g.setColor(colorText1);
+            g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(colorText2);
+            g.drawString("Close", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        } else {
+            g.setColor(colorText1);
+            g.drawString("Options", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(colorText2);
+            g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        }
+    }
+
+    private void drawNokiaMenu(Graphics g, int w, int h) {
+        int itemH  = NAME_FONT.getHeight() + 6;
+        int skH    = SUBNAME_FONT.getHeight() + PAD * 2;
+        int menuH  = itemH * nokiaMenuItems.length + PAD * 2;
+        int menuY  = h - skH - menuH;
+
+        g.setColor(shiftBrightness(colorBg, isLight(colorBg) ? -40 : 40));
+        g.fillRect(0, menuY, w, menuH);
+        g.setColor(dividerColor());
+        g.drawLine(0, menuY, w, 1);
+
+        for (int i = 0; i < nokiaMenuItems.length; i++) {
+            int y = menuY + PAD + i * itemH;
+            if (i == nokiaMenuSel) {
+                g.setColor(colorText1);
+                g.fillRect(0, y - 2, w, itemH);
+                g.setColor(colorBg);
+            } else {
+                g.setColor(colorText3);
+            }
+            g.setFont(NAME_FONT);
+            g.drawString(nokiaMenuItems[i], PAD, y, Graphics.LEFT | Graphics.TOP);
         }
     }
 
