@@ -17,7 +17,7 @@ J2AMP is a proof-of-concept but also very fully-featured music player for Apple 
   - 1. Open https://music.apple.com in your PC's browser
   - 2. Log in and open the Console tab in the Web Inspector (F12 or CTRL+SHIFT+I)
   - 3. In the Web Inspector, go to the Console tab and paste:"
-       ``js JSON.stringify({ devToken: MusicKit.getInstance().developerToken,  userToken: MusicKit.getInstance().musicUserToken }) ``
+       ``JSON.stringify({ devToken: MusicKit.getInstance().developerToken,  userToken: MusicKit.getInstance().musicUserToken }) ``
   - 4. Copy the output JSON and save it as a .json file on your phone
 - Install the WV2J2ME.jar file in [./dist](https://github.com/abandonedaccount111/J2AMP/tree/main/dist) into your phone.
 
