@@ -3,6 +3,7 @@ package com.amplayer.ui;
 import com.amplayer.midlets.AppleMusicMIDlet;
 import com.amplayer.playback.PlaybackManager;
 import com.amplayer.utils.Settings;
+import com.amplayer.utils.IAPManager;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
@@ -62,6 +63,7 @@ public class SettingsForm extends Canvas implements CommandListener {
     private static final int LR_LASTFM     = 5;
     private static final int LR_LASTFM_NP  = 6;
     private static final int LR_VISUALIZER = 7;
+    private static final int LR_BB_WIFI    = 8;
 
     // -------------------------------------------------------------------------
     // Commands
@@ -115,7 +117,10 @@ public class SettingsForm extends Canvas implements CommandListener {
     private int rowCount() {
         // Base: marquee, cache, performance, art, preload, lastfm, visualizer = 7
         // +1 for Now Playing sub-row when signed in to Last.fm
-        return signedIn() ? 8 : 7;
+        // +1 for BB WiFi row on BlackBerry devices
+        int count = signedIn() ? 8 : 7;
+        if (Settings.IS_BLACKBERRY) count++;
+        return count;
     }
 
     /** Map a display-row index to a logical row constant. */
@@ -123,9 +128,13 @@ public class SettingsForm extends Canvas implements CommandListener {
         // Rows 0-5 map 1:1 (marquee, cache, perf, art, preload, lastfm)
         if (di <= LR_LASTFM) return di;
         if (signedIn()) {
-            return (di == 6) ? LR_LASTFM_NP : LR_VISUALIZER;
+            if (di == 6) return LR_LASTFM_NP;
+            if (di == 7) return LR_VISUALIZER;
+            return LR_BB_WIFI; // di==8, only when IS_BLACKBERRY
         }
-        return LR_VISUALIZER; // di==6 → visualizer when not signed in
+        // not signed in
+        if (di == 6) return LR_VISUALIZER;
+        return LR_BB_WIFI; // di==7, only when IS_BLACKBERRY
     }
 
     // -------------------------------------------------------------------------
@@ -214,6 +223,7 @@ public class SettingsForm extends Canvas implements CommandListener {
             case LR_LASTFM:     return "Last.fm";
             case LR_LASTFM_NP:  return "Now Playing Updates";
             case LR_VISUALIZER: return "Visualizer";
+            case LR_BB_WIFI:    return "BlackBerry WiFi";
         }
         return "";
     }
@@ -247,6 +257,10 @@ public class SettingsForm extends Canvas implements CommandListener {
                     : "Send Now Playing: Off";
             case LR_VISUALIZER:
                 return "Open spectrum visualizer";
+            case LR_BB_WIFI:
+                return Settings.bbWifiEnabled
+                    ? "Force WiFi routing: On"
+                    : "Force WiFi routing: Off";
         }
         return "";
     }
@@ -309,6 +323,13 @@ public class SettingsForm extends Canvas implements CommandListener {
                 break;
             case LR_VISUALIZER:
                 openVisualizer();
+                break;
+            case LR_BB_WIFI:
+                Settings.bbWifiEnabled = !Settings.bbWifiEnabled;
+                Settings.save();
+                // Reset cached IAP so the new routing suffix takes effect immediately
+                IAPManager.reset();
+                repaint();
                 break;
         }
     }

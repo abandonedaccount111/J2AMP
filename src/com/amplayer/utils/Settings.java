@@ -14,6 +14,7 @@ import javax.microedition.rms.RecordStore;
  *   Record 6 — performanceMode     ("auto", "low", or "normal")
  *   Record 7 — artEnabled          ("1" or "0")
  *   Record 8 — preloadEnabled      ("1" or "0")
+ *   Record 9 — bbWifiEnabled       ("1" or "0", BlackBerry WiFi routing)
  *
  * artEnabled and preloadEnabled each have their own row in Settings and can be
  * toggled independently. Performance mode applies presets for both, but an
@@ -23,6 +24,17 @@ import javax.microedition.rms.RecordStore;
 public class Settings {
 
     private static final String STORE = "AMSettings";
+
+    // -------------------------------------------------------------------------
+    // BlackBerry detection (evaluated once at class-load time)
+    // -------------------------------------------------------------------------
+
+    public static final boolean IS_BLACKBERRY;
+    static {
+        String platform = System.getProperty("microedition.platform");
+        IS_BLACKBERRY = platform != null
+                && platform.toLowerCase().startsWith("blackberry");
+    }
 
     // -------------------------------------------------------------------------
     // Persisted fields
@@ -42,7 +54,8 @@ public class Settings {
     // -------------------------------------------------------------------------
 
     public static boolean lowMemoryMode  = false;
-    public static boolean preloadEnabled = true;  // persisted as record 8
+    public static boolean preloadEnabled  = true;   // persisted as record 8
+    public static boolean bbWifiEnabled  = false;  // persisted as record 9
     public static int     queryLimit     = 100;   // derived-only
 
     // -------------------------------------------------------------------------
@@ -73,14 +86,15 @@ public class Settings {
         // Performance mode sets derived flags (artEnabled, preloadEnabled, etc.) as presets.
         applyPerformanceMode();
 
-        // Records 7 and 8 are explicit user overrides that win over the performance preset.
-        if (n >= 7 || n >= 8) {
+        // Records 7-9 are explicit user overrides that win over the performance preset.
+        if (n >= 7) {
             RecordStore rs2 = null;
             try {
                 rs2 = RecordStore.openRecordStore(STORE, false);
                 int n2 = rs2.getNumRecords();
-                if (n2 >= 7) artEnabled     = "1".equals(readRec(rs2, 7));
+                if (n2 >= 7) artEnabled    = "1".equals(readRec(rs2, 7));
                 if (n2 >= 8) preloadEnabled = "1".equals(readRec(rs2, 8));
+                if (n2 >= 9) bbWifiEnabled  = "1".equals(readRec(rs2, 9));
             } catch (Exception ignored) {
             } finally {
                 closeQuietly(rs2);
@@ -102,6 +116,7 @@ public class Settings {
             writeRec(rs, performanceMode  != null ? performanceMode : "auto");
             writeRec(rs, artEnabled       ? "1" : "0");
             writeRec(rs, preloadEnabled   ? "1" : "0");
+            writeRec(rs, bbWifiEnabled    ? "1" : "0");
         } catch (Exception ignored) {
         } finally {
             closeQuietly(rs);

@@ -1,5 +1,6 @@
 package com.amplayer.utils;
 
+import com.amplayer.utils.Settings;
 import com.nokia.mid.iapinfo.AccessPoint;
 import javax.microedition.rms.RecordStore;
 import com.nokia.mid.iapinfo.IAPInfo;
@@ -46,8 +47,10 @@ public class IAPManager {
     public static String appendTo(String url) {
         int id = load();
         System.out.println("CachedIAPID: " + id);
-        if (id < 0) return url;
-        return url + ";nokia_apnid=" + id;
+        if (id >= 0) url = url + ";nokia_apnid=" + id;
+        if (Settings.IS_BLACKBERRY && Settings.bbWifiEnabled)
+            url = url + ";deviceside=true;interface=wifi";
+        return url;
     }
 
     public static void captureFromSystem() {

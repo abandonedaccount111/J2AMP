@@ -20,7 +20,12 @@ public class ModernConnector {
     public static Object open(String connectionURL) throws IOException {
         String protocol = Utils.split(connectionURL, ':')[0];
         if (protocol.equals("ssl") || protocol.equals("tls")) {
-            String endpoint = Utils.split(connectionURL.substring(6), '/')[0];
+            String withoutScheme = connectionURL.substring(6);
+            // Strip any GCF parameters (;nokia_apnid=, ;deviceside=, etc.) before splitting on '/'
+            int paramStart = withoutScheme.indexOf(';');
+            String nokiaIAPEndpoint = paramStart >= 0 ? withoutScheme.substring(paramStart) : "";
+            String cleanEndpoint = paramStart >= 0 ? withoutScheme.substring(0, paramStart) : withoutScheme;
+            String endpoint = Utils.split(cleanEndpoint, '/')[0];
             String[] endpointData = Utils.split(endpoint, ':');
             String host = endpointData[0];
             int port = 443;
@@ -29,13 +34,6 @@ public class ModernConnector {
             } catch (Exception e) {
                 // Nothing
             }
-
-            String nokiaIAPEndpoint = "";
-            
-            if (connectionURL.indexOf(";nokia_apnid=") >= 0){
-                // Get ;nokia_apnid=x from connectionURL and set it to nokiaIAPEndpoint
-                nokiaIAPEndpoint = connectionURL.substring(connectionURL.indexOf(";nokia_apnid="));
-           }
 
             return new ModernSecureConnection(host, port, nokiaIAPEndpoint);
         }
@@ -71,14 +69,12 @@ public class ModernConnector {
             return ws;
         }
         if (protocol.equals("https")) {
-            String endpoint = Utils.split(connectionURL.substring(8), '/')[0];
-            String nokiaIAPEndpoint = "";
-            
-            if (connectionURL.indexOf(";nokia_apnid=") >= 0){
-                // Get ;nokia_apnid=x from connectionURL and set it to nokiaIAPEndpoint
-                nokiaIAPEndpoint = connectionURL.substring(connectionURL.indexOf(";nokia_apnid="));
-           }
-
+            String withoutScheme = connectionURL.substring(8);
+            // Strip any GCF parameters before splitting on '/'
+            int paramStart = withoutScheme.indexOf(';');
+            String nokiaIAPEndpoint = paramStart >= 0 ? withoutScheme.substring(paramStart) : "";
+            String cleanEndpoint = paramStart >= 0 ? withoutScheme.substring(0, paramStart) : withoutScheme;
+            String endpoint = Utils.split(cleanEndpoint, '/')[0];
             String[] endpointData = Utils.split(endpoint, ':');
             String host = endpointData[0];
             int port = 443;
