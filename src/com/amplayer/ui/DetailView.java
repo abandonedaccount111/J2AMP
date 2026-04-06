@@ -107,9 +107,14 @@ public class DetailView extends Canvas implements CommandListener {
     private String[] trackIds;
     private String[] trackNames;
     private String[] trackArtists;
-    private int      trackCount   = 0;
-    private boolean  tracksLoaded = false;
-    private String   errorMsg     = null;
+    private int      trackCount        = 0;
+    private boolean  tracksLoaded      = false;
+    private String   errorMsg          = null;
+    private String   tracksNextUrl     = null;  // null = no more track pages
+    private boolean  loadingMoreTracks = false;
+    private boolean  moreTracksScheduled = false;
+
+    private static final int TRACKS_LOAD_AHEAD = 5;
 
     /** Artist ID extracted from album relationship — only set for non-playlist views. */
     private String   albumArtistId = null;
@@ -252,6 +257,9 @@ public class DetailView extends Canvas implements CommandListener {
         JSONArray  tracks    = tracksRel.getArray("data", null);
         if (tracks == null)  { trackCount = 0; return; }
 
+        // Store next-page URL if the relationship is paginated
+        tracksNextUrl = tracksRel.getString("next", null);
+
         trackCount   = tracks.size();
         trackIds     = new String[trackCount];
         trackNames   = new String[trackCount];
@@ -286,6 +294,85 @@ public class DetailView extends Canvas implements CommandListener {
             }
             trackIds[i] = rawId;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Paginated track loading
+    // -------------------------------------------------------------------------
+
+    /** Trigger loading the next track page if needed. Call after navigation. */
+    private synchronized void maybeLoadMoreTracks() {
+        if (tracksNextUrl == null || moreTracksScheduled) return;
+        if (selectedIndex < trackCount - TRACKS_LOAD_AHEAD) return;
+        moreTracksScheduled = true;
+        loadingMoreTracks   = true;
+        final String url = tracksNextUrl;
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    JSONObject resp = api.APIRequest(url, null, "GET", null, null);
+                    appendTrackPage(resp);
+                } catch (Exception e) {
+                    synchronized (DetailView.this) {
+                        loadingMoreTracks   = false;
+                        moreTracksScheduled = false;
+                    }
+                    repaint();
+                }
+            }
+        }).start();
+    }
+
+    /** Append one page of tracks from a flat collection response (data[] at top level). */
+    private synchronized void appendTrackPage(JSONObject resp) {
+        String next = resp.getString("next", null);
+        JSONArray tracks = resp.getArray("data", null);
+        int add = (tracks != null) ? tracks.size() : 0;
+
+        if (add > 0) {
+            int newCount = trackCount + add;
+            String[] newIds     = new String[newCount];
+            String[] newNames   = new String[newCount];
+            String[] newArtists = new String[newCount];
+            System.arraycopy(trackIds,     0, newIds,     0, trackCount);
+            System.arraycopy(trackNames,   0, newNames,   0, trackCount);
+            System.arraycopy(trackArtists, 0, newArtists, 0, trackCount);
+
+            for (int i = 0; i < add; i++) {
+                JSONObject track      = tracks.getObject(i);
+                String     rawId      = track.getString("id", "");
+                JSONObject trackAttrs = track.getObject("attributes", null);
+                if (trackAttrs != null) {
+                    if (isLibrary) {
+                        JSONObject pp = trackAttrs.getObject("playParams", null);
+                        if (pp != null) {
+                            String catalogId = pp.getString("catalogId", "");
+                            if (catalogId.length() > 0) {
+                                rawId = catalogId;
+                            } else {
+                                String ppId = pp.getString("id", "");
+                                if (ppId.length() > 0 && !ppId.startsWith("i.")) rawId = ppId;
+                            }
+                        }
+                    }
+                    newNames[trackCount + i]   = trackAttrs.getString("name",       "Unknown");
+                    newArtists[trackCount + i] = trackAttrs.getString("artistName", "");
+                } else {
+                    newNames[trackCount + i]   = "Unknown";
+                    newArtists[trackCount + i] = "";
+                }
+                newIds[trackCount + i] = rawId;
+            }
+            trackIds     = newIds;
+            trackNames   = newNames;
+            trackArtists = newArtists;
+            trackCount   = newCount;
+        }
+
+        tracksNextUrl       = next;
+        loadingMoreTracks   = false;
+        moreTracksScheduled = false;
+        repaint();
     }
 
     // -------------------------------------------------------------------------
@@ -400,7 +487,8 @@ public class DetailView extends Canvas implements CommandListener {
         if (tracksLoaded) {
             g.setFont(SUBNAME_FONT);
             g.setColor(colorText1);   // tint color for metadata
-            g.drawString(trackCount + " tracks",
+            String countLabel = trackCount + (tracksNextUrl != null ? "+ tracks" : " tracks");
+            g.drawString(countLabel,
                          textX, PAD + HEADER_FONT.getHeight() + NAME_FONT.getHeight() + 8,
                          Graphics.LEFT | Graphics.TOP);
         }
@@ -411,16 +499,27 @@ public class DetailView extends Canvas implements CommandListener {
         int cx = g.getClipX(), cy = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
         g.setClip(0, listY, w, listH);
 
-        int itemH   = trackItemH();
-        int visible = listH / itemH + 1;
-        int end     = Math.min(trackCount, scrollOffset + visible);
-        int numW    = 30;
+        int itemH    = trackItemH();
+        int visible  = listH / itemH + 1;
+        boolean lmt  = loadingMoreTracks;
+        int totalRows = trackCount + (lmt ? 1 : 0);
+        int end       = Math.min(totalRows, scrollOffset + visible);
+        int numW      = 30;
 
         int textX  = numW + 4;
         int availW = w - textX - PAD - 3; // -3 for scroll bar
 
         for (int i = scrollOffset; i < end; i++) {
-            int     y   = listY + (i - scrollOffset) * itemH;
+            int y = listY + (i - scrollOffset) * itemH;
+
+            if (i == trackCount) {
+                // "Loading more..." footer row
+                g.setFont(SUBNAME_FONT);
+                g.setColor(colorText2);
+                g.drawString("Loading...", textX, y + PAD, Graphics.LEFT | Graphics.TOP);
+                continue;
+            }
+
             boolean sel = (i == selectedIndex);
 
             if (sel) {
@@ -476,10 +575,10 @@ public class DetailView extends Canvas implements CommandListener {
             g.drawLine(numW, y + itemH - 1, w - PAD, y + itemH - 1);
         }
 
-        // Scroll bar — tinted with textColor1
-        if (trackCount > visible) {
-            int barH = Math.max(8, listH * visible / trackCount);
-            int barY = listY + (listH - barH) * scrollOffset / Math.max(1, trackCount - visible);
+        // Scroll bar — tinted with textColor1 (uses totalRows to include loading footer)
+        if (totalRows > visible) {
+            int barH = Math.max(8, listH * visible / totalRows);
+            int barY = listY + (listH - barH) * scrollOffset / Math.max(1, totalRows - visible);
             g.setColor(shiftBrightness(colorBg, 30));
             g.fillRect(w - 3, listY, 3, listH);
             g.setColor(colorText1);
@@ -574,6 +673,7 @@ public class DetailView extends Canvas implements CommandListener {
                 int visible = listH / trackItemH() + 1;
                 if (selectedIndex >= scrollOffset + visible)
                     scrollOffset = selectedIndex - visible + 1;
+                maybeLoadMoreTracks();
                 repaint();
             }
         } else if (action == FIRE || keyCode == -5) {

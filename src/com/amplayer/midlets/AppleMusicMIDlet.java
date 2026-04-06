@@ -15,6 +15,7 @@ import com.amplayer.ui.ArtistView;
 import com.amplayer.ui.BaseAction;
 import com.amplayer.ui.BaseList;
 import com.amplayer.ui.DetailView;
+import com.amplayer.ui.LazyList;
 import com.amplayer.ui.LastFmScrobbler;
 import com.amplayer.ui.NowPlayingScreen;
 import com.amplayer.ui.SearchForm;
@@ -135,74 +136,15 @@ public class AppleMusicMIDlet extends MIDlet {
     }
 
     public void showSongs() {
-        showLibraryItems("Songs", "/v1/me/library/songs", false);
+        showLibraryItems("Songs", "/v1/me/library/songs", "song");
     }
 
     public void showAlbums() {
-        final Form loading = new Form("Albums");
-        loading.append(new StringItem("", "Loading..."));
-        display.setCurrent(loading);
-
-        new Thread(new Runnable() {
-            public void run() {
-                try {
-                    AMAPI a = getAPI();
-                    Hashtable params = new Hashtable();
-                    params.put("limit", String.valueOf(Settings.queryLimit));
-                    params.put("l",     a.getStorefrontLanguage());
-                    JSONObject resp = a.APIRequest("/v1/me/library/albums", params, "GET", null, null);
-                    JSONArray  data = resp.getArray("data", null);
-
-                    final JSONArray items = new JSONArray();
-                    if (data != null) {
-                        for (int i = 0; i < data.size(); i++) {
-                            JSONObject resource = data.getObject(i);
-                            JSONObject attrs    = resource.getObject("attributes", null);
-                            if (attrs == null) continue;
-
-                            String id      = resource.getString("id", "");
-                            String name    = attrs.getString("name",       "Unknown");
-                            String artist  = attrs.getString("artistName", "");
-                            String artUrl  = extractArtUrl(attrs);
-
-                            JSONObject actionObj = new JSONObject();
-                            actionObj.put("type",    "open_album");
-                            actionObj.put("details", id);
-                            actionObj.put("extra",   artUrl);
-
-                            JSONObject itemObj = new JSONObject();
-                            itemObj.put("type",    "album");
-                            itemObj.put("name",    name);
-                            itemObj.put("subname", artist);
-                            itemObj.put("action",  actionObj);
-                            items.add(itemObj);
-                        }
-                    }
-
-                    BaseList list = new BaseList("Albums", items,
-                        new BaseList.SelectionListener() {
-                            public void onItemSelected(int index, String type,
-                                    String name, String subname, BaseAction action) {
-                                if ("open_album".equals(action.type)) {
-                                    onLibraryItemSelected(name, subname, action, true);
-                                }
-                            }
-                        });
-                    list.setBackAction(new Runnable() {
-                        public void run() { display.setCurrent(mainMenu); }
-                    });
-                    display.setCurrent(list);
-
-                } catch (Exception e) {
-                    final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                    loading.append(new StringItem("Error: ", msg));
-                }
-            }
-        }).start();
+        showLibraryItems("Albums", "/v1/me/library/albums", "album");
     }
 
     public void showPlaylist() {
-        showLibraryItems("Playlists", "/v1/me/library/playlists", true);
+        showLibraryItems("Playlists", "/v1/me/library/playlists", "playlist");
     }
 
     public void showSettings() {
@@ -239,12 +181,91 @@ public class AppleMusicMIDlet extends MIDlet {
     public String getSourcePlaylistArtUrl() { return sourcePlaylistArtUrl; }
 
     // =========================================================================
-    // Library list loader (songs or playlists)
+    // Library list loader — songs, albums, or playlists
+    // itemType: "song" | "album" | "playlist"
     // =========================================================================
+
+    /**
+     * Parsed data for one page of library items.
+     * All arrays are parallel and the same length.
+     */
+    private static final class PageData {
+        String[]     types;
+        String[]     names;
+        String[]     subs;      // artist name (songs/albums) or "" (playlists)
+        String[]     playIds;   // catalog/play ID — only meaningful for songs
+        BaseAction[] actions;
+        String       next;      // next-page URL from response, null if last page
+    }
+
+    /**
+     * Parse one page of Apple Music library response into flat arrays.
+     * Works for songs, albums, and playlists.
+     */
+    private PageData parseLibraryPage(JSONObject resp, String itemType) {
+        JSONArray data = resp != null ? resp.getArray("data", null) : null;
+        String    next = resp != null ? resp.getString("next", null) : null;
+        int n = (data != null) ? data.size() : 0;
+
+        PageData pd    = new PageData();
+        pd.types   = new String[n];
+        pd.names   = new String[n];
+        pd.subs    = new String[n];
+        pd.playIds = new String[n];
+        pd.actions = new BaseAction[n];
+        pd.next    = next;
+
+        for (int i = 0; i < n; i++) {
+            JSONObject resource = data.getObject(i);
+            String     id       = resource.getString("id", "");
+            JSONObject attrs    = resource.getObject("attributes", null);
+            String     name     = (attrs != null) ? attrs.getString("name", "Unknown") : "Unknown";
+            String     artUrl   = extractArtUrl(attrs);
+
+            if ("song".equals(itemType)) {
+                // Resolve the salable catalog ID from playParams
+                String playId = id;
+                if (attrs != null) {
+                    JSONObject pp = attrs.getObject("playParams", null);
+                    if (pp != null) {
+                        String catId = pp.getString("catalogId", "");
+                        if (catId.length() > 0) {
+                            playId = catId;
+                        } else {
+                            String ppId = pp.getString("id", "");
+                            if (ppId.length() > 0 && !ppId.startsWith("i.")) playId = ppId;
+                        }
+                    }
+                }
+                String artist  = (attrs != null) ? attrs.getString("artistName", "") : "";
+                pd.types[i]   = "song";
+                pd.names[i]   = name;
+                pd.subs[i]    = artist;
+                pd.playIds[i] = playId;
+                pd.actions[i] = new BaseAction("play", playId, artUrl);
+
+            } else if ("album".equals(itemType)) {
+                String artist  = (attrs != null) ? attrs.getString("artistName", "") : "";
+                pd.types[i]   = "album";
+                pd.names[i]   = name;
+                pd.subs[i]    = artist;
+                pd.playIds[i] = id;
+                pd.actions[i] = new BaseAction("open_album", id, artUrl);
+
+            } else { // playlist
+                pd.types[i]   = "playlist";
+                pd.names[i]   = name;
+                pd.subs[i]    = "";
+                pd.playIds[i] = id;
+                pd.actions[i] = new BaseAction("open_playlist", id, artUrl);
+            }
+        }
+        return pd;
+    }
 
     private void showLibraryItems(final String title,
                                   final String endpoint,
-                                  final boolean isPlaylists) {
+                                  final String itemType) {
         final Form loading = new Form(title);
         loading.append(new StringItem("", "Loading..."));
         display.setCurrent(loading);
@@ -252,100 +273,64 @@ public class AppleMusicMIDlet extends MIDlet {
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    AMAPI a = getAPI();
-                    Hashtable params = new Hashtable();
+                    final AMAPI a = getAPI();
+                    Hashtable   params = new Hashtable();
                     params.put("limit", String.valueOf(Settings.queryLimit));
                     params.put("l",     a.getStorefrontLanguage());
-                    JSONObject resp = a.APIRequest(endpoint, params, "GET", null, null);
-                    JSONArray  data = resp.getArray("data", null);
+                    JSONObject   resp = a.APIRequest(endpoint, params, "GET", null, null);
+                    final PageData first = parseLibraryPage(resp, itemType);
 
-                    final JSONArray items     = new JSONArray();
-                    // Parallel song arrays for queue-all-songs behaviour
-                    final java.util.Vector songItems = new java.util.Vector();
+                    // holder[0] is set after LazyList construction so the
+                    // SelectionListener can reference the list object.
+                    final LazyList[] holder = new LazyList[1];
 
-                    if (data != null) {
-                        for (int i = 0; i < data.size(); i++) {
-                            JSONObject resource = data.getObject(i);
-                            String id   = resource.getString("id", "");
-                            JSONObject attrs = resource.getObject("attributes", null);
-                            if (attrs == null) continue;
-
-                            String name   = attrs.getString("name", "Unknown");
-                            String artUrl = extractArtUrl(attrs);
-
-                            JSONObject actionObj = new JSONObject();
-                            JSONObject itemObj   = new JSONObject();
-
-                            if (isPlaylists) {
-                                actionObj.put("type",    "open_playlist");
-                                actionObj.put("details", id);
-                                actionObj.put("extra",   artUrl);
-                                itemObj.put("type",    "playlist");
-                                itemObj.put("name",    name);
-                                itemObj.put("subname", "");
-                                itemObj.put("action",  actionObj);
-                            } else {
-                                // Resolve the salable catalog ID from playParams
-                                String playId = id;
-                                JSONObject pp = attrs.getObject("playParams", null);
-                                if (pp != null) {
-                                    String catId = pp.getString("catalogId", "");
-                                    if (catId.length() > 0) {
-                                        playId = catId;
-                                    } else {
-                                        String ppId = pp.getString("id", "");
-                                        if (ppId.length() > 0 && !ppId.startsWith("i."))
-                                            playId = ppId;
-                                    }
-                                }
-                                actionObj.put("type",    "play");
-                                actionObj.put("details", playId);
-                                actionObj.put("extra",   artUrl);
-                                itemObj.put("type",    "song");
-                                itemObj.put("name",    name);
-                                itemObj.put("subname", attrs.getString("artistName", ""));
-                                itemObj.put("action",  actionObj);
-
-                                // Track for queue-all
-                                JSONObject si = new JSONObject();
-                                si.put("id",     playId);
-                                si.put("name",   name);
-                                si.put("artist", attrs.getString("artistName", ""));
-                                si.put("art",    artUrl);
-                                songItems.addElement(si);
+                    LazyList.DataSource ds = new LazyList.DataSource() {
+                        public void loadNextPage(LazyList list, String nextUrl) {
+                            try {
+                                JSONObject r  = a.APIRequest(nextUrl, null, "GET", null, null);
+                                PageData   pd = parseLibraryPage(r, itemType);
+                                list.appendItems(pd.types, pd.names, pd.subs, pd.actions, pd.next);
+                            } catch (Exception e) {
+                                list.setLoadError();
                             }
-                            items.add(itemObj);
                         }
-                    }
+                    };
 
-                    final boolean lib = isPlaylists; // effectively final for inner class
-                    BaseList list = new BaseList(title, items,
-                        new BaseList.SelectionListener() {
-                            public void onItemSelected(int index, String type,
-                                    String name, String subname, BaseAction action) {
-                                if ("play".equals(action.type)) {
-                                    int n = songItems.size();
-                                    String[] ids     = new String[n];
-                                    String[] names   = new String[n];
-                                    String[] artists = new String[n];
-                                    int startIndex   = 0;
-                                    String artUrl    = action.extra;
-                                    for (int i = 0; i < n; i++) {
-                                        JSONObject si = (JSONObject) songItems.elementAt(i);
-                                        ids[i]     = si.getString("id",     "");
-                                        names[i]   = si.getString("name",   "");
-                                        artists[i] = si.getString("artist", "");
-                                        if (ids[i].equals(action.details)) {
-                                            startIndex = i;
-                                            artUrl     = si.getString("art", artUrl);
-                                        }
+                    LazyList.SelectionListener sl = new LazyList.SelectionListener() {
+                        public void onItemSelected(int index, String type,
+                                                   String name, String sub,
+                                                   BaseAction action) {
+                            if ("play".equals(action.type)) {
+                                // Build queue from all currently loaded songs
+                                LazyList l = holder[0];
+                                int n = (l != null) ? l.getLoadedCount() : 0;
+                                String[] ids     = new String[n];
+                                String[] qNames  = new String[n];
+                                String[] artists = new String[n];
+                                int startIndex   = 0;
+                                String artUrl    = action.extra;
+                                for (int i = 0; i < n; i++) {
+                                    BaseAction ai = (l != null) ? l.getLoadedAction(i) : null;
+                                    ids[i]     = (ai != null) ? ai.details : "";
+                                    qNames[i]  = (l != null) ? l.getLoadedName(i) : "";
+                                    artists[i] = (l != null) ? l.getLoadedSub(i)  : "";
+                                    if (i == index) {
+                                        startIndex = i;
+                                        if (ai != null && ai.extra.length() > 0) artUrl = ai.extra;
                                     }
-                                    playQueue(ids, names, artists, artUrl, startIndex);
-                                } else {
-                                    onLibraryItemSelected(name, subname, action, lib);
                                 }
+                                playQueue(ids, qNames, artists, artUrl, startIndex);
+                            } else {
+                                onLibraryItemSelected(name, sub, action, true);
                             }
-                        });
+                        }
+                    };
+
+                    final LazyList list = new LazyList(title, ds, sl);
+                    holder[0] = list;
+
+                    list.appendItems(first.types, first.names, first.subs,
+                                     first.actions, first.next);
                     list.setBackAction(new Runnable() {
                         public void run() { display.setCurrent(mainMenu); }
                     });
