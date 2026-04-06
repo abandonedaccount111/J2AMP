@@ -6,15 +6,16 @@ import javax.microedition.rms.RecordStore;
  * Global app settings persisted in RMS store "AMSettings".
  *
  * Record layout:
- *   Record 1 — marqueeEnabled      ("1" or "0")
- *   Record 2 — cacheMb             (int as decimal string, default 20)
- *   Record 3 — lastFmUser          (UTF-8 string, "" if not set)
- *   Record 4 — lastFmSk            (session key, "" if not set)
- *   Record 5 — lastFmNowPlaying    ("1" or "0", default "0")
- *   Record 6 — performanceMode     ("auto", "low", or "normal")
- *   Record 7 — artEnabled          ("1" or "0")
- *   Record 8 — preloadEnabled      ("1" or "0")
- *   Record 9 — bbWifiEnabled       ("1" or "0", BlackBerry WiFi routing)
+ *   Record 1  — marqueeEnabled      ("1" or "0")
+ *   Record 2  — cacheMb             (int as decimal string, default 20)
+ *   Record 3  — lastFmUser          (UTF-8 string, "" if not set)
+ *   Record 4  — lastFmSk            (session key, "" if not set)
+ *   Record 5  — lastFmNowPlaying    ("1" or "0", default "0")
+ *   Record 6  — performanceMode     ("auto", "low", or "normal")
+ *   Record 7  — artEnabled          ("1" or "0")
+ *   Record 8  — preloadEnabled      ("1" or "0")
+ *   Record 9  — bbWifiEnabled       ("1" or "0", BlackBerry WiFi routing)
+ *   Record 10 — cjkImageRender      ("1" or "0", render CJK chars via image service)
  *
  * artEnabled and preloadEnabled each have their own row in Settings and can be
  * toggled independently. Performance mode applies presets for both, but an
@@ -55,8 +56,9 @@ public class Settings {
 
     public static boolean lowMemoryMode  = false;
     public static boolean preloadEnabled  = true;   // persisted as record 8
-    public static boolean bbWifiEnabled  = false;  // persisted as record 9
-    public static int     queryLimit     = 100;   // derived-only
+    public static boolean bbWifiEnabled    = false;  // persisted as record 9
+    public static boolean cjkImageRender  = false;  // persisted as record 10
+    public static int     queryLimit      = 100;   // derived-only
 
     // -------------------------------------------------------------------------
     // Load / save
@@ -145,9 +147,10 @@ public class Settings {
             try {
                 rs2 = RecordStore.openRecordStore(STORE, false);
                 int n2 = rs2.getNumRecords();
-                if (n2 >= 7) artEnabled    = "1".equals(readRec(rs2, 7));
-                if (n2 >= 8) preloadEnabled = "1".equals(readRec(rs2, 8));
-                if (n2 >= 9) bbWifiEnabled  = "1".equals(readRec(rs2, 9));
+                if (n2 >= 7)  artEnabled      = "1".equals(readRec(rs2, 7));
+                if (n2 >= 8)  preloadEnabled  = "1".equals(readRec(rs2, 8));
+                if (n2 >= 9)  bbWifiEnabled   = "1".equals(readRec(rs2, 9));
+                if (n2 >= 10) cjkImageRender  = "1".equals(readRec(rs2, 10));
             } catch (Exception ignored) {
             } finally {
                 closeQuietly(rs2);
@@ -170,6 +173,7 @@ public class Settings {
             writeRec(rs, artEnabled       ? "1" : "0");
             writeRec(rs, preloadEnabled   ? "1" : "0");
             writeRec(rs, bbWifiEnabled    ? "1" : "0");
+            writeRec(rs, cjkImageRender   ? "1" : "0");
         } catch (Exception ignored) {
         } finally {
             closeQuietly(rs);

@@ -63,7 +63,8 @@ public class SettingsForm extends Canvas implements CommandListener {
     private static final int LR_LASTFM     = 5;
     private static final int LR_LASTFM_NP  = 6;
     private static final int LR_VISUALIZER = 7;
-    private static final int LR_BB_WIFI    = 8;
+    private static final int LR_CJK_RENDER = 8;
+    private static final int LR_BB_WIFI    = 9;
 
     // -------------------------------------------------------------------------
     // Commands  (used only on non-Nokia devices)
@@ -124,10 +125,10 @@ public class SettingsForm extends Canvas implements CommandListener {
 
     /** Total number of visible rows. */
     private int rowCount() {
-        // Base: marquee, cache, performance, art, preload, lastfm, visualizer = 7
+        // Base: marquee, cache, performance, art, preload, lastfm, visualizer, cjk_render = 8
         // +1 for Now Playing sub-row when signed in to Last.fm
         // +1 for BB WiFi row on BlackBerry devices
-        int count = signedIn() ? 8 : 7;
+        int count = signedIn() ? 9 : 8;
         if (Settings.IS_BLACKBERRY) count++;
         return count;
     }
@@ -139,11 +140,13 @@ public class SettingsForm extends Canvas implements CommandListener {
         if (signedIn()) {
             if (di == 6) return LR_LASTFM_NP;
             if (di == 7) return LR_VISUALIZER;
-            return LR_BB_WIFI; // di==8, only when IS_BLACKBERRY
+            if (di == 8) return LR_CJK_RENDER;
+            return LR_BB_WIFI; // di==9, only when IS_BLACKBERRY
         }
         // not signed in
         if (di == 6) return LR_VISUALIZER;
-        return LR_BB_WIFI; // di==7, only when IS_BLACKBERRY
+        if (di == 7) return LR_CJK_RENDER;
+        return LR_BB_WIFI; // di==8, only when IS_BLACKBERRY
     }
 
     // -------------------------------------------------------------------------
@@ -248,6 +251,7 @@ public class SettingsForm extends Canvas implements CommandListener {
             case LR_LASTFM:     return "Last.fm";
             case LR_LASTFM_NP:  return "Now Playing Updates";
             case LR_VISUALIZER: return "Visualizer";
+            case LR_CJK_RENDER: return "CJK Image Render";
             case LR_BB_WIFI:    return "BlackBerry WiFi";
         }
         return "";
@@ -282,6 +286,10 @@ public class SettingsForm extends Canvas implements CommandListener {
                     : "Send Now Playing: Off";
             case LR_VISUALIZER:
                 return "Open spectrum visualizer";
+            case LR_CJK_RENDER:
+                return Settings.cjkImageRender
+                    ? "Render CJK via image: On"
+                    : "Render CJK via image: Off";
             case LR_BB_WIFI:
                 return Settings.bbWifiEnabled
                     ? "Force WiFi routing: On"
@@ -352,6 +360,11 @@ public class SettingsForm extends Canvas implements CommandListener {
                 break;
             case LR_VISUALIZER:
                 openVisualizer();
+                break;
+            case LR_CJK_RENDER:
+                Settings.cjkImageRender = !Settings.cjkImageRender;
+                Settings.save();
+                repaint();
                 break;
             case LR_BB_WIFI:
                 Settings.bbWifiEnabled = !Settings.bbWifiEnabled;

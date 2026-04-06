@@ -102,7 +102,8 @@ public class NowPlayingScreen extends Canvas
     // Progress timer
     // -------------------------------------------------------------------------
 
-    private volatile boolean timerActive = false;
+    private volatile boolean timerActive    = false;
+    private volatile int     timerGeneration = 0;
 
     // -------------------------------------------------------------------------
     // Marquee
@@ -337,18 +338,22 @@ public class NowPlayingScreen extends Canvas
     private void startProgressTimer() {
         if (timerActive) return;
         timerActive = true;
+        final int gen = ++timerGeneration;
         new Thread(new Runnable() {
             public void run() {
-                while (timerActive && pm.isPlaying()) {
+                while (timerActive && gen == timerGeneration && pm.isPlaying()) {
                     repaint();
                     try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
                 }
-                timerActive = false;
+                if (gen == timerGeneration) timerActive = false;
             }
         }).start();
     }
 
-    private void stopProgressTimer() { timerActive = false; }
+    private void stopProgressTimer() {
+        timerGeneration++;
+        timerActive = false;
+    }
 
     // -------------------------------------------------------------------------
     // Marquee timer — runs while screen is shown, independent of play state

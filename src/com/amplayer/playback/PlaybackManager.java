@@ -78,8 +78,9 @@ public class PlaybackManager implements PlayerListener {
     // -------------------------------------------------------------------------
 
     private Player  player;
-    private boolean isPlaying = false;
-    private boolean isLoading = false;
+    private boolean isPlaying    = false;
+    private boolean isLoading    = false;
+    private long    pausedTimeUs = -1L;  // media time (µs) saved on pause
 
     // -------------------------------------------------------------------------
     // Credentials / API  (set lazily via setCredentials before first play)
@@ -222,6 +223,7 @@ public class PlaybackManager implements PlayerListener {
             isLoading    = true;
             currentIndex = index;
         }
+        pausedTimeUs = -1L;
         stopPlayer();
         fireTrackChanged(index);
 
@@ -319,14 +321,26 @@ public class PlaybackManager implements PlayerListener {
 
     public synchronized void pause() {
         if (player != null && isPlaying) {
-            try { player.stop(); isPlaying = false; } catch (Exception ignored) {}
+            try {
+                long t = player.getMediaTime();
+                pausedTimeUs = (t == Player.TIME_UNKNOWN) ? -1L : t;
+                player.stop();
+                isPlaying = false;
+            } catch (Exception ignored) {}
             firePlayStateChanged(false);
         }
     }
 
     public synchronized void resume() {
         if (player != null && !isPlaying && !isLoading) {
-            try { player.start(); isPlaying = true; } catch (Exception ignored) {}
+            try {
+                player.start();
+                if (pausedTimeUs >= 0) {
+                    try { player.setMediaTime(pausedTimeUs); } catch (Exception ignored) {}
+                    pausedTimeUs = -1L;
+                }
+                isPlaying = true;
+            } catch (Exception ignored) {}
             firePlayStateChanged(true);
         }
     }
