@@ -782,7 +782,7 @@ public class LyricsView extends Canvas
         g.setColor(COLOR_HEADER);
         g.fillRect(0, menuY, w, menuH);
         g.setColor(COLOR_DIVIDER);
-        g.drawLine(0, menuY, w, 1);
+        g.drawLine(0, menuY, w, menuY);
 
         for (int i = 0; i < NOKIA_MENU_ITEMS.length; i++) {
             int y = menuY + PAD + i * itemH;

@@ -383,7 +383,7 @@ public class BaseList extends Canvas implements CommandListener {
         g.setColor(COLOR_HEADER_BG);
         g.fillRect(0, menuY, w, menuH);
         g.setColor(COLOR_DIVIDER);
-        g.drawLine(0, menuY, w, 1);
+        g.drawLine(0, menuY, w, menuY);
 
         // Item 0: Select
         paintNokiaMenuItem(g, w, menuY, 0, itemH, "Select");

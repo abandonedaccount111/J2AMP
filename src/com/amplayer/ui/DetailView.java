@@ -645,7 +645,7 @@ public class DetailView extends Canvas implements CommandListener {
         g.setColor(shiftBrightness(colorBg, isLight(colorBg) ? -40 : 40));
         g.fillRect(0, menuY, w, menuH);
         g.setColor(dividerColor());
-        g.drawLine(0, menuY, w, 1);
+        g.drawLine(0, menuY, w, menuY);
 
         for (int i = 0; i < nokiaMenuItems.length; i++) {
             int y = menuY + PAD + i * itemH;

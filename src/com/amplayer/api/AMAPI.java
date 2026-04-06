@@ -34,9 +34,7 @@ public class AMAPI {
     private String userToken;
     private String storefront;
     private String storefrontLanguage;
-    // Always use SocketHttpConnection for amp-api requests so that headers like
-    // Origin are sent verbatim (native HttpConnection strips them on Symbian).
-    // play.itunes.apple.com is exempted below because it is handled separately.
+
     private boolean httpConnectionWorks = false;
     private String URL_PREFIX = "http://amp-api.music.apple.com";
 
