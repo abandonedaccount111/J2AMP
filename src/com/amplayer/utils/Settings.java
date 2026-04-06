@@ -84,6 +84,30 @@ public class Settings {
         }
         return null;
     }
+
+    public static String getAudioContentType(String extension) {
+        String[] types = Manager.getSupportedContentTypes(null);
+        if (types != null) {
+            for (int i = 0; i < types.length; i++) {
+                // skip if not start with audio
+                if (types[i] != null && types[i].toLowerCase().startsWith("audio")) {
+                    if (types[i] != null && (types[i].toLowerCase().indexOf(extension) >= 0)) {
+                        return types[i];
+                    }
+                    // Special case for MP3
+                    if (extension.equals("mp3") && types[i].toLowerCase().indexOf("mpeg") >= 0) {
+                        return types[i];
+                    }
+                    // Special case for AAC
+                    if (extension.equals("aac") && types[i].toLowerCase().indexOf("mp4") >= 0) {
+                        return types[i];
+                    }
+                }
+            }
+        }
+        return null;
+    }
+        
     
     public static int getMaxItemSize() {
         if (maxItemSize > 0) return maxItemSize;

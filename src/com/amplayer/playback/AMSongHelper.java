@@ -61,6 +61,30 @@ public class AMSongHelper {
         throw new Exception("No asset with flavor 32:ctrp64 found");
     }
 
+    public String[] getUploadedWebPlaybackURL(String id, String type, String devToken, String userToken) throws Exception {
+        // System.out.println("getWebPlaybackURL: " + id + " " + type + " " + devToken + " " + userToken);
+        AMAPI api = new AMAPI(devToken, userToken);
+        String endpoint = "WebObjects/MZPlay.woa/wa/webPlayback";
+        String prefix = "https://play.itunes.apple.com/";
+        // body is like {salableAdamId: "id"}
+        String body = "{\"universalLibraryId\":\"" + id + "\"}";
+        String response = api.APIRequestString(endpoint, null, "POST", body, prefix);
+        JSONObject json = JSON.getObject(response);
+        JSONObject data = json.getArray("songList").getObject(0);
+        JSONArray assets = data.getArray("assets");
+        // Find object with flavor = "32:ctrp64";
+        if (assets.size() > 0) {
+            JSONObject asset = assets.getObject(0);
+            String url = asset.getString("URL");
+            String extension = asset.getObject("metadata").getString("fileExtension");
+            String[] urls = new String[2];
+            urls[0] = (url.indexOf("apple.com") >= 0) ? strReplace(url, "https://", "http://"): url;
+            urls[1] = extension;
+            return urls;
+        }
+        throw new Exception("No uploaded asset found");
+    }
+
     public byte[] getAMDecryptedSong(
             String CONTENT_URL,
             String BYTE_RANGE,   // ignored; CONTENT_URL is always m3u8, full file is downloaded
@@ -729,6 +753,29 @@ public class AMSongHelper {
         }
     }
 
+    public InputStream getStream(String url) throws Exception {
+        HttpConnection conn = null;
+        InputStream    in   = null;
+        try {
+             if (url.startsWith("https")){
+                 conn = (HttpConnection) ModernConnector.open(IAPManager.appendTo(url));
+                 System.out.println("Using ModernConnector for AMP API request " + url);
+             } else {
+                 conn = (HttpConnection) SocketHttpConnection.open(url);
+             }
+            conn = (HttpConnection) SocketHttpConnection.open(url);
+            IAPManager.captureFromSystem();
+            conn.setRequestMethod(HttpConnection.GET);
+            int status = conn.getResponseCode();
+            in = conn.openInputStream();
+            if (status != HttpConnection.HTTP_OK)
+                throw new Exception("HTTP " + status + " GET " + shortenUrl(url));
+            return in;
+        } finally {
+            closeConn(conn);
+        }
+    }
+
     /** HTTP GET — return response body as a String. */
     private String getText(String url) throws Exception {
         return new String(get(url), "UTF-8");
@@ -875,5 +922,11 @@ public class AMSongHelper {
         if (url == null) return "";
         int slash = url.lastIndexOf('/');
         return slash >= 0 ? url.substring(slash + 1) : url;
+    }
+
+    private static String strReplace(String src, String from, String to) {
+        int i = src.indexOf(from);
+        if (i == -1) return src;
+        return src.substring(0, i) + to + src.substring(i + from.length());
     }
 }

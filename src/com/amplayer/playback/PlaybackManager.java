@@ -232,29 +232,45 @@ public class PlaybackManager implements PlayerListener {
         new Thread(new Runnable() {
             public void run() {
                 try {
+                    boolean isEncrypted = true;
                     // Try to play from cache file first (avoids RAM for byte array)
-                    String cachePath = cacheFilePath(id);
+                    String cachePath = cacheFilePath(id, null);
                     if (!cachedSizes.containsKey(id)) {
                         AMSongHelper helper = new AMSongHelper();
-                        String songUrl = helper.getWebPlaybackURL(
-                            id, "songs",
-                            api.getDeveloperToken(), api.getUserToken());
-                        byte[] data = helper.getAMDecryptedSong(
-                            songUrl, null, clientIdBlob, privateKeyDer,
-                            api.getDeveloperToken(), api.getUserToken());
-                        if (data == null) throw new Exception("Decryption returned null");
-                        writeToCache(id, data);
+                        String songUrl = null;
+                        byte[] data = null;
+                        String extension = "mp4";
+                        try {
+                            songUrl = helper.getWebPlaybackURL(
+                                id, "songs",
+                                api.getDeveloperToken(), api.getUserToken());
+                            data = helper.getAMDecryptedSong(
+                                songUrl, null, clientIdBlob, privateKeyDer,
+                                api.getDeveloperToken(), api.getUserToken());
+                             if (data == null) throw new Exception("Decryption returned null");
+                             writeToCache(id, data, extension);
+                        } catch (Exception e) {
+                            // Undecrypted Itunes Upload tracks
+                            isEncrypted = false;
+                            String[] urls = helper.getUploadedWebPlaybackURL(
+                                id, "songs",
+                                api.getDeveloperToken(), api.getUserToken());
+                            InputStream is = helper.getStream(urls[0]);
+                            if (is == null) throw new Exception("Failed to get stream");
+                            startPlaybackFromInputStream(is, urls[1]);
+                        }
                         data = null; // free before opening file — peak RAM released
                         System.gc();
                     }
-                    // Attempt to play from file stream (saves ~8 MB vs byte-array path)
-                    boolean started = startPlaybackFromFile(cachePath);
-                    if (!started) {
-                        // Fallback: read into byte array (older devices)
-                        byte[] data = readFromCache(id);
-                        if (data == null) throw new Exception("Cache read failed");
+                    // Attempt to play from file stream 
+                    if (isEncrypted) {
+                        boolean started = startPlaybackFromFile(cachePath);
+                        if (!started) {
+                            // Fallback: read into byte array (older devices)
+                            byte[] data = readFromCache(id);
+                            if (data == null) throw new Exception("Cache read failed");
                         startPlayback(data);
-                    }
+                    }}
                     evictStale(index, idSnap);
                     schedulePreloads(index, idSnap);
                 } catch (Exception e) {
@@ -283,7 +299,9 @@ public class PlaybackManager implements PlayerListener {
             fc = (FileConnection) Connector.open(path, Connector.READ);
             if (!fc.exists() || fc.fileSize() == 0) return false;
             in     = fc.openInputStream();
-            player = Manager.createPlayer(in, Settings.getSupportedMp4ContentType());
+            // Get extension from path
+            String extension = path.substring(path.lastIndexOf('.') + 1);
+            player = Manager.createPlayer(in, Settings.getAudioContentType(extension));
             player.realize();
             player.prefetch();
             VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
@@ -318,6 +336,20 @@ public class PlaybackManager implements PlayerListener {
         isLoading = false;
         firePlayStateChanged(true);
     }
+
+    private synchronized void startPlaybackFromInputStream(InputStream is, String extension) throws Exception {
+        stopPlayer();
+        player = Manager.createPlayer(is, Settings.getAudioContentType(extension));
+        player.realize();
+        player.prefetch();
+        VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
+        if (vc != null) vc.setLevel(100);
+        player.addPlayerListener(this);
+        player.start();
+        isPlaying = true;
+        isLoading = false;
+        firePlayStateChanged(true);
+    }   
 
     public synchronized void pause() {
         if (player != null && isPlaying) {
@@ -505,7 +537,7 @@ public class PlaybackManager implements PlayerListener {
                     byte[] data = helper.getAMDecryptedSong(
                         songUrl, null, clientIdBlob, privateKeyDer,
                         api.getDeveloperToken(), api.getUserToken());
-                    if (data != null) writeToCache(id, data);
+                    if (data != null) writeToCache(id, data, "mp4");
                 } catch (Exception ignored) {
                     // preload failure is non-fatal — track will be fetched on demand
                 }
@@ -644,7 +676,7 @@ public class PlaybackManager implements PlayerListener {
         }
     }
 
-    private static String cacheFilePath(String trackId) {
+    private static String cacheFilePath(String trackId, String extension) {
         String dir = getCacheDir();
         if (dir == null) return null;
         StringBuffer sb = new StringBuffer(trackId.length());
@@ -656,13 +688,14 @@ public class PlaybackManager implements PlayerListener {
             }
         }
         if (sb.length() == 0) return null;
-        return dir + sb.toString() + ".mp4";
+        if (extension == null) extension = "mp4";
+        return dir + sb.toString() + "." + extension;
     }
 
     /** Returns null on cache miss or I/O error. */
     private static byte[] readFromCache(String trackId) {
         if (!cachedSizes.containsKey(trackId)) return null;
-        String path = cacheFilePath(trackId);
+        String path = cacheFilePath(trackId, "mp4");
         if (path == null) return null;
         FileConnection fc = null;
         InputStream    in = null;
@@ -687,9 +720,9 @@ public class PlaybackManager implements PlayerListener {
         }
     }
 
-    private static void writeToCache(String trackId, byte[] data) {
+    private static void writeToCache(String trackId, byte[] data, String extension) {
         if (data == null) return;
-        String path = cacheFilePath(trackId);
+        String path = cacheFilePath(trackId, extension);
         if (path == null) return;
 
         // Enforce cap — FIFO eviction: remove oldest entry until there is room
@@ -720,7 +753,7 @@ public class PlaybackManager implements PlayerListener {
 
     private static void deleteCacheFile(String trackId) {
         removeSizeEntry(trackId);
-        String path = cacheFilePath(trackId);
+        String path = cacheFilePath(trackId, null);
         if (path == null) return;
         FileConnection fc = null;
         try {

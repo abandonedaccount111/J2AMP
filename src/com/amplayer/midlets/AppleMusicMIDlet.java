@@ -68,19 +68,19 @@ public class AppleMusicMIDlet extends MIDlet {
     protected void startApp() throws MIDletStateChangeException {
         display = Display.getDisplay(this);
         
-        if (Settings.getSupportedMp4ContentType() == null) {
-            final Alert alert = new Alert(
-                "Unsupported Device", "Your device is missing audio/mp4 playback support required by Apple Music.", 
-                null, AlertType.ERROR);
-            alert.setTimeout(Alert.FOREVER);
-            alert.setCommandListener(new CommandListener() {
-                public void commandAction(Command c, Displayable d) {
-                    notifyDestroyed();
-                }
-            });
-            display.setCurrent(alert);
-            return;
-        }
+        // if (Settings.getSupportedMp4ContentType() == null) {
+        //     final Alert alert = new Alert(
+        //         "Unsupported Device", "Your device is missing audio/mp4 playback support required by Apple Music.", 
+        //         null, AlertType.ERROR);
+        //     alert.setTimeout(Alert.FOREVER);
+        //     alert.setCommandListener(new CommandListener() {
+        //         public void commandAction(Command c, Displayable d) {
+        //             notifyDestroyed();
+        //         }
+        //     });
+        //     display.setCurrent(alert);
+        //     return;
+        // }
 
         Settings.load();
         PlaybackManager.setCacheSize(Settings.cacheMb);
