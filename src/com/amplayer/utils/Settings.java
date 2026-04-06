@@ -92,7 +92,7 @@ public class Settings {
     
     public static int getMaxQueueSize() {
         if (maxQueueSize > 0) return maxQueueSize;
-        return lowMemoryMode ? 100 : 500;
+        return lowMemoryMode ? 100 : 200;
     }
 
     // -------------------------------------------------------------------------
