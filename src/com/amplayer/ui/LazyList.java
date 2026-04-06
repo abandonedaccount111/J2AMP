@@ -94,6 +94,8 @@ public class LazyList extends Canvas implements CommandListener {
     private final DataSource       dataSource;
     private final SelectionListener itemListener;
     private       Runnable          backAction;
+    private       Runnable          refreshAction;
+    private       Runnable          searchAction;
     private       ContextListener   contextListener;
 
     // Context menu items (max 4)
@@ -227,6 +229,14 @@ public class LazyList extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     public void setBackAction(Runnable r) { this.backAction = r; }
+    public void setRefreshAction(Runnable r) { 
+        this.refreshAction = r; 
+        if (!isNokia && r != null) { addCommand(new Command("Refresh", Command.ITEM, 2)); }
+    }
+    public void setSearchAction(Runnable r) { 
+        this.searchAction = r; 
+        if (!isNokia && r != null) { addCommand(new Command("Search", Command.ITEM, 3)); }
+    }
 
     public void setContextListener(ContextListener l) { this.contextListener = l; }
 
@@ -467,6 +477,14 @@ public class LazyList extends Canvas implements CommandListener {
                         names[selectedIndex], subs[selectedIndex],
                         actions[selectedIndex], contextTags[ci]);
                 }
+            } else {
+                int extraIdx = ci - contextCount;
+                if (searchAction != null) {
+                    if (extraIdx == 0) searchAction.run();
+                    else if (extraIdx == 1 && refreshAction != null) refreshAction.run();
+                } else if (refreshAction != null) {
+                    if (extraIdx == 0) refreshAction.run();
+                }
             }
         }
     }
@@ -493,7 +511,10 @@ public class LazyList extends Canvas implements CommandListener {
     }
 
     private void drawNokiaMenu(Graphics g, int w, int h, int skH) {
-        int menuSize = 1 + contextCount;
+        int extraOpts = 0;
+        if (refreshAction != null) extraOpts++;
+        if (searchAction != null) extraOpts++;
+        int menuSize = 1 + contextCount + extraOpts;
         int itemH    = SUBNAME_FONT.getHeight() + 6;
         int menuH    = itemH * menuSize + PAD * 2;
         int menuY    = h - skH - menuH;
@@ -503,9 +524,12 @@ public class LazyList extends Canvas implements CommandListener {
         g.setColor(COLOR_DIVIDER);
         g.drawLine(0, menuY, w, menuY);
 
-        paintMenuItem(g, w, menuY, 0, itemH, "Select");
+        int drawIdx = 0;
+        paintMenuItem(g, w, menuY, drawIdx++, itemH, "Select");
         for (int i = 0; i < contextCount; i++)
-            paintMenuItem(g, w, menuY, i + 1, itemH, contextLabels[i]);
+            paintMenuItem(g, w, menuY, drawIdx++, itemH, contextLabels[i]);
+        if (searchAction != null) paintMenuItem(g, w, menuY, drawIdx++, itemH, "Search");
+        if (refreshAction != null) paintMenuItem(g, w, menuY, drawIdx++, itemH, "Refresh");
     }
 
     private void paintMenuItem(Graphics g, int w, int menuY, int idx, int itemH, String label) {
@@ -561,6 +585,8 @@ public class LazyList extends Canvas implements CommandListener {
         } else if (c == CMD_BACK && backAction != null) {
             backAction.run();
         } else {
+            if ("Refresh".equals(c.getLabel()) && refreshAction != null) refreshAction.run();
+            if ("Search".equals(c.getLabel()) && searchAction != null) searchAction.run();
             // Context command
             for (int i = 0; i < contextCount; i++) {
                 // Commands registered via addContextItem are not tracked here

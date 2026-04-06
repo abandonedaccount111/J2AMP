@@ -9,6 +9,7 @@ import javax.microedition.lcdui.Form;
 import javax.microedition.lcdui.StringItem;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.util.Vector;
 import com.amplayer.playback.PlaybackManager;
 import com.amplayer.api.AMAPI;
 import com.amplayer.ui.ArtistView;
@@ -26,6 +27,13 @@ import com.amplayer.utils.Settings;
 import com.amplayer.utils.TokenStore;
 import java.util.Hashtable;
 import javax.microedition.lcdui.Displayable;
+import javax.microedition.lcdui.Alert;
+import javax.microedition.lcdui.AlertType;
+import javax.microedition.lcdui.Command;
+import javax.microedition.lcdui.CommandListener;
+import javax.microedition.lcdui.Gauge;
+
+
 
 /**
  * Root MIDlet for the Apple Music J2ME player.
@@ -65,6 +73,9 @@ public class AppleMusicMIDlet extends MIDlet {
             api = new AMAPI(tokens[0], tokens[1]);
             initMainScreens();
             display.setCurrent(mainMenu);
+            syncLibrary(false, new Runnable() {
+                public void run() { display.setCurrent(mainMenu); }
+            });
         } else {
             // First run (or after reset) — show the token setup form
             display.setCurrent(new TokenSetupForm(this, display));
@@ -78,6 +89,9 @@ public class AppleMusicMIDlet extends MIDlet {
                 api = new AMAPI(devToken, userToken);
                 initMainScreens();
                 display.setCurrent(mainMenu);
+                syncLibrary(false, new Runnable() {
+                    public void run() { display.setCurrent(mainMenu); }
+                });
             }
         });
     }
@@ -118,8 +132,16 @@ public class AppleMusicMIDlet extends MIDlet {
     }
 
     public void showSearch() {
-        final Form loading = new Form("Search");
-        loading.append(new StringItem("", "Loading..."));
+        final javax.microedition.lcdui.Alert loading = new javax.microedition.lcdui.Alert("Search", "Loading...", null, javax.microedition.lcdui.AlertType.INFO);
+        loading.setTimeout(javax.microedition.lcdui.Alert.FOREVER);
+        loading.setIndicator(new javax.microedition.lcdui.Gauge(null, false, javax.microedition.lcdui.Gauge.INDEFINITE, javax.microedition.lcdui.Gauge.CONTINUOUS_RUNNING));
+        final javax.microedition.lcdui.Command searchCancel = new javax.microedition.lcdui.Command("Cancel", javax.microedition.lcdui.Command.CANCEL, 1);
+        loading.addCommand(searchCancel);
+        loading.setCommandListener(new javax.microedition.lcdui.CommandListener() {
+            public void commandAction(javax.microedition.lcdui.Command c, javax.microedition.lcdui.Displayable d) {
+                if (c == searchCancel) display.setCurrent(mainMenu);
+            }
+        });
         display.setCurrent(loading);
         new Thread(new Runnable() {
             public void run() {
@@ -129,22 +151,113 @@ public class AppleMusicMIDlet extends MIDlet {
                         AppleMusicMIDlet.this, display, a, a.getStorefront()));
                 } catch (Exception e) {
                     final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                    loading.append(new StringItem("Error: ", msg));
+                    loading.setString("Error: " + msg);
+                    loading.setType(javax.microedition.lcdui.AlertType.ERROR);
+                }
+            }
+        }).start();
+    }
+
+    public void syncLibrary(final boolean force, final Runnable onComplete) {
+        if (!force) {
+            boolean hasSongs = com.amplayer.utils.LibraryDb.isValid("songs");
+            boolean hasAlbums = com.amplayer.utils.LibraryDb.isValid("albums");
+            boolean hasPlaylists = com.amplayer.utils.LibraryDb.isValid("playlists");
+            if (hasSongs && hasAlbums && hasPlaylists) {
+                if (onComplete != null) display.callSerially(onComplete);
+                return;
+            }
+        }
+
+        final Alert loading = new Alert("Library Sync", "Downloading library...", null, AlertType.INFO);
+        loading.setTimeout(Alert.FOREVER);
+        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+        
+        final Command cancelCmd = new Command("Cancel", Command.CANCEL, 1);
+        loading.addCommand(cancelCmd);
+        loading.setCommandListener(new CommandListener() {
+            public void commandAction(Command c, Displayable d) {
+                if (c == cancelCmd) {
+                    if (onComplete != null) display.callSerially(onComplete);
+                }
+            }
+        });
+        display.setCurrent(loading);
+
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    String[] endpoints = {"/v1/me/library/songs", "/v1/me/library/albums", "/v1/me/library/playlists"};
+                    String[] itemTypes = {"song", "album", "playlist"};
+                    String[] dbTypes = {"songs", "albums", "playlists"};
+                    
+                    AMAPI a = getAPI();
+                    java.util.Hashtable params = new java.util.Hashtable();
+                    int qLimit = Settings.queryLimit > 0 ? Settings.queryLimit : 100;
+                    params.put("limit", String.valueOf(Math.min(qLimit, 100)));
+                    params.put("l", a.getStorefrontLanguage());
+                    
+                    for (int dbIdx = 0; dbIdx < 3; dbIdx++) {
+                        loading.setString("Downloading " + dbTypes[dbIdx] + "...");
+                        int max = Settings.getMaxItemSize();
+                        java.util.Vector ids = new java.util.Vector();
+                        java.util.Vector names = new java.util.Vector();
+                        java.util.Vector subs = new java.util.Vector();
+                        
+                        String nextUrl = endpoints[dbIdx];
+                        while (nextUrl != null && ids.size() < max) {
+                            cc.nnproject.json.JSONObject r = a.APIRequest(nextUrl, nextUrl.equals(endpoints[dbIdx]) ? params : null, "GET", null, null);
+                            PageData pd = parseLibraryPage(r, itemTypes[dbIdx]);
+                            if (pd.names.length == 0) break;
+                            for (int i = 0; i < pd.names.length; i++) {
+                                if (ids.size() >= max) break;
+                                ids.addElement(pd.playIds[i]);
+                                names.addElement(pd.names[i]);
+                                subs.addElement(pd.subs[i]);
+                            }
+                            nextUrl = pd.next;
+                        }
+                        com.amplayer.utils.LibraryDb.save(dbTypes[dbIdx], ids, names, subs);
+                    }
+                    
+                    loading.setString("Sync Complete!");
+                    loading.setType(AlertType.INFO);
+                    loading.setIndicator(null);
+                    loading.removeCommand(cancelCmd);
+                    loading.setTimeout(2000);
+                    new Thread(new Runnable() {
+                        public void run() {
+                            try { Thread.sleep(2000); } catch (Exception ignored) {}
+                            if (onComplete != null) display.callSerially(onComplete);
+                        }
+                    }).start();
+                } catch (Exception e) {
+                    loading.setString("Sync Error: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+                    loading.setType(AlertType.ERROR);
+                    loading.setIndicator(null);
+                    loading.removeCommand(cancelCmd);
+                    loading.setTimeout(3000);
+                    new Thread(new Runnable() {
+                        public void run() {
+                            try { Thread.sleep(3000); } catch (Exception ignored) {}
+                            if (onComplete != null) display.callSerially(onComplete);
+                        }
+                    }).start();
                 }
             }
         }).start();
     }
 
     public void showSongs() {
-        showLibraryItems("Songs", "/v1/me/library/songs", "song");
+        showLibraryItems("Songs", "/v1/me/library/songs", "song", "songs", false);
     }
 
     public void showAlbums() {
-        showLibraryItems("Albums", "/v1/me/library/albums", "album");
+        showLibraryItems("Albums", "/v1/me/library/albums", "album", "albums", false);
     }
 
     public void showPlaylist() {
-        showLibraryItems("Playlists", "/v1/me/library/playlists", "playlist");
+        showLibraryItems("Playlists", "/v1/me/library/playlists", "playlist", "playlists", false);
     }
 
     public void showSettings() {
@@ -263,85 +376,172 @@ public class AppleMusicMIDlet extends MIDlet {
         return pd;
     }
 
-    private void showLibraryItems(final String title,
-                                  final String endpoint,
-                                  final String itemType) {
-        final Form loading = new Form(title);
-        loading.append(new StringItem("", "Loading..."));
+    private void showLibraryItems(final String title, final String endpoint, final String itemType, final String dbType, final boolean forceReload) {
+        if (!forceReload && com.amplayer.utils.LibraryDb.isValid(dbType)) {
+            new Thread(new Runnable() {
+                public void run() {
+                    com.amplayer.utils.LibraryDb.DbResult res = com.amplayer.utils.LibraryDb.read(dbType, null);
+                    if (res != null) {
+                        displayCachedLibraryItems(title, itemType, res, dbType, endpoint);
+                    } else {
+                        showLibraryItems(title, endpoint, itemType, dbType, true);
+                    }
+                }
+            }).start();
+            return;
+        }
+
+        final Alert loading = new Alert(
+            title, 
+            forceReload ? "Refreshing Database..." : "Loading...", 
+            null, 
+            AlertType.INFO);
+        loading.setTimeout(Alert.FOREVER);
+        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+        final Command libCancel = new Command("Cancel", Command.CANCEL, 1);
+        loading.addCommand(libCancel);
+        loading.setCommandListener(new CommandListener() {
+            public void commandAction(javax.microedition.lcdui.Command c, javax.microedition.lcdui.Displayable d) {
+                if (c == libCancel) display.setCurrent(mainMenu);
+            }
+        });
         display.setCurrent(loading);
 
         new Thread(new Runnable() {
             public void run() {
                 try {
+                    int max = Settings.getMaxItemSize();
+                    Vector ids = new Vector();
+                    Vector names = new Vector();
+                    Vector subs = new Vector();
+                    Vector actions = new Vector();
+                    
                     final AMAPI a = getAPI();
-                    Hashtable   params = new Hashtable();
-                    params.put("limit", String.valueOf(Settings.queryLimit));
-                    params.put("l",     a.getStorefrontLanguage());
-                    JSONObject   resp = a.APIRequest(endpoint, params, "GET", null, null);
-                    final PageData first = parseLibraryPage(resp, itemType);
-
-                    // holder[0] is set after LazyList construction so the
-                    // SelectionListener can reference the list object.
-                    final LazyList[] holder = new LazyList[1];
-
-                    LazyList.DataSource ds = new LazyList.DataSource() {
-                        public void loadNextPage(LazyList list, String nextUrl) {
-                            try {
-                                JSONObject r  = a.APIRequest(nextUrl, null, "GET", null, null);
-                                PageData   pd = parseLibraryPage(r, itemType);
-                                list.appendItems(pd.types, pd.names, pd.subs, pd.actions, pd.next);
-                            } catch (Exception e) {
-                                list.setLoadError();
-                            }
+                    Hashtable params = new Hashtable();
+                    int qLimit = Settings.queryLimit > 0 ? Settings.queryLimit : 100;
+                    params.put("limit", String.valueOf(Math.min(qLimit, 100)));
+                    params.put("l", a.getStorefrontLanguage());
+                    
+                    String nextUrl = endpoint;
+                    while (nextUrl != null && ids.size() < max) {
+                        JSONObject r = a.APIRequest(nextUrl, nextUrl.equals(endpoint) ? params : null, "GET", null, null);
+                        PageData pd = parseLibraryPage(r, itemType);
+                        if (pd.names.length == 0) break;
+                        for (int i = 0; i < pd.names.length; i++) {
+                            if (ids.size() >= max) break;
+                            ids.addElement(pd.playIds[i]);
+                            names.addElement(pd.names[i]);
+                            subs.addElement(pd.subs[i]);
                         }
-                    };
-
-                    LazyList.SelectionListener sl = new LazyList.SelectionListener() {
-                        public void onItemSelected(int index, String type,
-                                                   String name, String sub,
-                                                   BaseAction action) {
-                            if ("play".equals(action.type)) {
-                                // Build queue from all currently loaded songs
-                                LazyList l = holder[0];
-                                int n = (l != null) ? l.getLoadedCount() : 0;
-                                String[] ids     = new String[n];
-                                String[] qNames  = new String[n];
-                                String[] artists = new String[n];
-                                int startIndex   = 0;
-                                String artUrl    = action.extra;
-                                for (int i = 0; i < n; i++) {
-                                    BaseAction ai = (l != null) ? l.getLoadedAction(i) : null;
-                                    ids[i]     = (ai != null) ? ai.details : "";
-                                    qNames[i]  = (l != null) ? l.getLoadedName(i) : "";
-                                    artists[i] = (l != null) ? l.getLoadedSub(i)  : "";
-                                    if (i == index) {
-                                        startIndex = i;
-                                        if (ai != null && ai.extra.length() > 0) artUrl = ai.extra;
-                                    }
-                                }
-                                playQueue(ids, qNames, artists, artUrl, startIndex);
-                            } else {
-                                onLibraryItemSelected(name, sub, action, true);
-                            }
-                        }
-                    };
-
-                    final LazyList list = new LazyList(title, ds, sl);
-                    holder[0] = list;
-
-                    list.appendItems(first.types, first.names, first.subs,
-                                     first.actions, first.next);
-                    list.setBackAction(new Runnable() {
-                        public void run() { display.setCurrent(mainMenu); }
-                    });
-                    display.setCurrent(list);
-
+                        nextUrl = pd.next;
+                    }
+                    
+                    com.amplayer.utils.LibraryDb.save(dbType, ids, names, subs);
+                    
+                    com.amplayer.utils.LibraryDb.DbResult res = new com.amplayer.utils.LibraryDb.DbResult();
+                    res.length = ids.size();
+                    res.ids = new String[res.length];
+                    res.titles = new String[res.length];
+                    res.subnames = new String[res.length];
+                    for (int i = 0; i < res.length; i++) {
+                        res.ids[i] = (String) ids.elementAt(i);
+                        res.titles[i] = (String) names.elementAt(i);
+                        res.subnames[i] = (String) subs.elementAt(i);
+                    }
+                    displayCachedLibraryItems(title, itemType, res, dbType, endpoint);
                 } catch (Exception e) {
                     final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                    loading.append(new StringItem("Error: ", msg));
+                    loading.setString("Error: " + msg);
+                    loading.setType(javax.microedition.lcdui.AlertType.ERROR);
                 }
             }
         }).start();
+    }
+
+    private void displayCachedLibraryItems(final String title, final String itemType, final com.amplayer.utils.LibraryDb.DbResult res, final String dbType, final String endpoint) {
+        final LazyList[] holder = new LazyList[1];
+        
+        LazyList.SelectionListener sl = new LazyList.SelectionListener() {
+            public void onItemSelected(int index, String type, String name, String sub, BaseAction action) {
+                if ("play".equals(action.type)) {
+                    LazyList l = holder[0];
+                    int n = l.getLoadedCount();
+                    String[] ids = new String[n];
+                    String[] qNames = new String[n];
+                    String[] artists = new String[n];
+                    String artUrl = action.extra;
+                    for (int i = 0; i < n; i++) {
+                        BaseAction ai = l.getLoadedAction(i);
+                        ids[i] = ai != null ? ai.details : "";
+                        qNames[i] = l.getLoadedName(i);
+                        artists[i] = l.getLoadedSub(i);
+                    }
+                    playQueue(ids, qNames, artists, artUrl, index);
+                } else {
+                    onLibraryItemSelected(name, sub, action, true);
+                }
+            }
+        };
+        
+        final LazyList list = new LazyList(title, new LazyList.DataSource() {
+            public void loadNextPage(LazyList l, String n) {} // no-op since all loaded
+        }, sl);
+        holder[0] = list;
+        
+        String[] types = new String[res.length];
+        BaseAction[] actionsArr = new BaseAction[res.length];
+        for (int i = 0; i < res.length; i++) {
+            types[i] = itemType;
+            if ("song".equals(itemType)) {
+                actionsArr[i] = new BaseAction("play", res.ids[i], "");
+            } else if ("album".equals(itemType)) {
+                actionsArr[i] = new BaseAction("open_album", res.ids[i], "");
+            } else {
+                actionsArr[i] = new BaseAction("open_playlist", res.ids[i], "");
+            }
+        }
+        
+        list.appendItems(types, res.titles, res.subnames, actionsArr, null);
+        list.setBackAction(new Runnable() {
+            public void run() { display.setCurrent(mainMenu); }
+        });
+        list.setRefreshAction(new Runnable() {
+            public void run() { showLibraryItems(title, endpoint, itemType, dbType, true); }
+        });
+        final javax.microedition.lcdui.TextBox searchBox = new javax.microedition.lcdui.TextBox("Filter " + title, "", 64, javax.microedition.lcdui.TextField.ANY);
+        searchBox.addCommand(new javax.microedition.lcdui.Command("Filter", javax.microedition.lcdui.Command.OK, 1));
+        searchBox.addCommand(new javax.microedition.lcdui.Command("Cancel", javax.microedition.lcdui.Command.BACK, 2));
+        searchBox.setCommandListener(new javax.microedition.lcdui.CommandListener() {
+            public void commandAction(javax.microedition.lcdui.Command c, Displayable d) {
+                if (c.getCommandType() == javax.microedition.lcdui.Command.OK) {
+                    list.setTitle(title + " (Filtering...)");
+                    display.setCurrent(list);
+                    new Thread(new Runnable() {
+                        public void run() {
+                            String q = searchBox.getString().trim();
+                            if (q.length() == 0) q = null;
+                            final com.amplayer.utils.LibraryDb.DbResult res2 = com.amplayer.utils.LibraryDb.read(dbType, q);
+                            display.callSerially(new Runnable() {
+                                public void run() {
+                                    if (res2 != null) displayCachedLibraryItems(title, itemType, res2, dbType, endpoint);
+                                    else display.setCurrent(list); // restore
+                                }
+                            });
+                        }
+                    }).start();
+                } else {
+                    display.setCurrent(list);
+                }
+            }
+        });
+        
+        list.setSearchAction(new Runnable() {
+            public void run() {
+                searchBox.setString("");
+                display.setCurrent(searchBox);
+            }
+        });
+        display.setCurrent(list);
     }
 
     private void onLibraryItemSelected(final String name, final String subname,

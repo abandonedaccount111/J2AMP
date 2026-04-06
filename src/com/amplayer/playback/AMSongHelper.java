@@ -28,6 +28,7 @@ import javax.microedition.io.Connector;
 import tech.alicesworld.ModernConnectorSym93.*;
 import com.amplayer.utils.IAPManager;
 import com.amplayer.utils.SocketHttpConnection;
+import com.amplayer.utils.IOUtils;
 
 /**
  *
@@ -223,30 +224,7 @@ public class AMSongHelper {
     /** Resolve a temp path in the same cache directory PlaybackManager uses. */
     private String getTempFilePath(String adamId) {
         // Mirror PlaybackManager's cache-dir logic using a recognised system property
-        String dir = null;
-        String mc = System.getProperty("fileconn.dir.memorycard");
-        if (mc != null && mc.length() > 0) {
-            if (!mc.endsWith("/")) mc += "/";
-            dir = mc + "wvj2me/";
-        }
-        if (dir == null) {
-            try {
-                Enumeration roots = FileSystemRegistry.listRoots();
-                while (roots.hasMoreElements()) {
-                    String root = (String) roots.nextElement();
-                    if (!root.toUpperCase().startsWith("C")) {
-                        dir = "file:///" + root + "wvj2me/"; break;
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-        if (dir == null) {
-            String priv = System.getProperty("fileconn.dir.private");
-            if (priv != null && priv.length() > 0) {
-                if (!priv.endsWith("/")) priv += "/";
-                dir = priv + "wvj2me/";
-            }
-        }
+        String dir = IOUtils.getCacheDirectory();
         if (dir == null) return null;
         // Sanitise adamId for filename
         StringBuffer sb = new StringBuffer();

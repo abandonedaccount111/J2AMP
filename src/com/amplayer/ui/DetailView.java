@@ -89,7 +89,7 @@ public class DetailView extends Canvas implements CommandListener {
     private final boolean            isLibrary;       // true → use /v1/me/library/ endpoint
     private final String             name;
     private final String             subname;
-    private final String             artUrlTemplate;  // may contain {w}, {h}, {f}
+    private       String             artUrlTemplate;  // may contain {w}, {h}, {f}
     private final AMAPI              api;
     private final String             storefront;
     private final String             storefrontLanguage;
@@ -235,6 +235,9 @@ public class DetailView extends Canvas implements CommandListener {
                 colorText2 = parseColor(art.getString("textColor2", null), colorText2);
                 colorText3 = parseColor(art.getString("textColor3", null), colorText3);
                 colorText4 = parseColor(art.getString("textColor4", null), colorText4);
+                if (artUrlTemplate == null || artUrlTemplate.trim().length() == 0) {
+                    artUrlTemplate = art.getString("url", "");
+                }
             }
         }
 
@@ -686,12 +689,68 @@ public class DetailView extends Canvas implements CommandListener {
     private void onTrackSelected() {
         if (midlet == null || trackIds == null || selectedIndex < 0
                 || selectedIndex >= trackCount) return;
+        
+        final String[] curIds = new String[trackCount];
+        final String[] curNames = new String[trackCount];
+        final String[] curArtists = new String[trackCount];
+        System.arraycopy(trackIds, 0, curIds, 0, trackCount);
+        System.arraycopy(trackNames, 0, curNames, 0, trackCount);
+        System.arraycopy(trackArtists, 0, curArtists, 0, trackCount);
+
         if (isPlaylist) {
             midlet.playQueueFromPlaylist(
-                trackIds, trackNames, trackArtists, artUrlTemplate, selectedIndex,
+                curIds, curNames, curArtists, artUrlTemplate, selectedIndex,
                 id, name, artUrlTemplate);
         } else {
-            midlet.playQueue(trackIds, trackNames, trackArtists, artUrlTemplate, selectedIndex);
+            midlet.playQueue(curIds, curNames, curArtists, artUrlTemplate, selectedIndex);
+        }
+
+        String pMode = Settings.performanceMode;
+        boolean perfNormal = "normal".equals(pMode) || ("auto".equals(pMode) && !Settings.lowMemoryMode);
+        
+        if (perfNormal && tracksNextUrl != null) {
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        int limit = Math.min(Settings.getMaxItemSize(), Settings.getMaxQueueSize());
+                        while (true) {
+                            String url;
+                            synchronized (DetailView.this) {
+                                if (tracksNextUrl == null || trackCount >= limit) break;
+                                if (loadingMoreTracks) {
+                                    try { Thread.sleep(500); } catch (Exception ignored) {}
+                                    continue;
+                                }
+                                loadingMoreTracks = true;
+                                moreTracksScheduled = true;
+                                url = tracksNextUrl;
+                            }
+                            JSONObject resp = api.APIRequest(url, null, "GET", null, null);
+                            
+                            int oldTrackCount = trackCount;
+                            appendTrackPage(resp);
+                            
+                            int added = trackCount - oldTrackCount;
+                            if (added > 0) {
+                                String[] newIds = new String[added];
+                                String[] newNames = new String[added];
+                                String[] newArtists = new String[added];
+                                System.arraycopy(trackIds, oldTrackCount, newIds, 0, added);
+                                System.arraycopy(trackNames, oldTrackCount, newNames, 0, added);
+                                System.arraycopy(trackArtists, oldTrackCount, newArtists, 0, added);
+                                
+                                PlaybackManager pm = midlet.getPlaybackManager();
+                                if (pm != null) pm.appendToQueue(newIds, newNames, newArtists);
+                            }
+                        }
+                    } catch (Exception e) {
+                        synchronized(DetailView.this) {
+                            loadingMoreTracks = false;
+                            moreTracksScheduled = false;
+                        }
+                    }
+                }
+            }).start();
         }
     }
 

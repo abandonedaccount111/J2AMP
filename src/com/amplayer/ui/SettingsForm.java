@@ -64,7 +64,11 @@ public class SettingsForm extends Canvas implements CommandListener {
     private static final int LR_LASTFM_NP  = 6;
     private static final int LR_VISUALIZER = 7;
     private static final int LR_CJK_RENDER = 8;
-    private static final int LR_BB_WIFI    = 9;
+    private static final int LR_DB_RELOAD  = 9;
+    private static final int LR_MAX_ITEM   = 10;
+    private static final int LR_MAX_QUEUE  = 11;
+    private static final int LR_FORCE_DB   = 12;
+    private static final int LR_BB_WIFI    = 13;
 
     // -------------------------------------------------------------------------
     // Commands  (used only on non-Nokia devices)
@@ -125,28 +129,32 @@ public class SettingsForm extends Canvas implements CommandListener {
 
     /** Total number of visible rows. */
     private int rowCount() {
-        // Base: marquee, cache, performance, art, preload, lastfm, visualizer, cjk_render = 8
-        // +1 for Now Playing sub-row when signed in to Last.fm
-        // +1 for BB WiFi row on BlackBerry devices
-        int count = signedIn() ? 9 : 8;
+        // Base: marquee, cache, perf, art, preload, lastfm, visualizer, cjk_render, db_reload, max_item, max_queue, force_db = 12
+        int count = signedIn() ? 13 : 12;
         if (Settings.IS_BLACKBERRY) count++;
         return count;
     }
 
     /** Map a display-row index to a logical row constant. */
     private int logicalRow(int di) {
-        // Rows 0-5 map 1:1 (marquee, cache, perf, art, preload, lastfm)
         if (di <= LR_LASTFM) return di;
         if (signedIn()) {
             if (di == 6) return LR_LASTFM_NP;
             if (di == 7) return LR_VISUALIZER;
             if (di == 8) return LR_CJK_RENDER;
-            return LR_BB_WIFI; // di==9, only when IS_BLACKBERRY
+            if (di == 9)  return LR_DB_RELOAD;
+            if (di == 10) return LR_MAX_ITEM;
+            if (di == 11) return LR_MAX_QUEUE;
+            if (di == 12) return LR_FORCE_DB;
+            return LR_BB_WIFI;
         }
-        // not signed in
         if (di == 6) return LR_VISUALIZER;
         if (di == 7) return LR_CJK_RENDER;
-        return LR_BB_WIFI; // di==8, only when IS_BLACKBERRY
+        if (di == 8)  return LR_DB_RELOAD;
+        if (di == 9)  return LR_MAX_ITEM;
+        if (di == 10) return LR_MAX_QUEUE;
+        if (di == 11) return LR_FORCE_DB;
+        return LR_BB_WIFI;
     }
 
     // -------------------------------------------------------------------------
@@ -252,6 +260,10 @@ public class SettingsForm extends Canvas implements CommandListener {
             case LR_LASTFM_NP:  return "Now Playing Updates";
             case LR_VISUALIZER: return "Visualizer";
             case LR_CJK_RENDER: return "CJK Image Render";
+            case LR_DB_RELOAD:  return "Library Reload";
+            case LR_MAX_ITEM:   return "Max Item Size";
+            case LR_MAX_QUEUE:  return "Max Queue Size";
+            case LR_FORCE_DB:   return "Force Reload DB";
             case LR_BB_WIFI:    return "BlackBerry WiFi";
         }
         return "";
@@ -290,6 +302,16 @@ public class SettingsForm extends Canvas implements CommandListener {
                 return Settings.cjkImageRender
                     ? "Render CJK via image: On"
                     : "Render CJK via image: Off";
+            case LR_DB_RELOAD:
+                if (Settings.dbReloadInterval == -1) return "Never";
+                if (Settings.dbReloadInterval == 0) return "Every start";
+                return "Every " + Settings.dbReloadInterval + " days";
+            case LR_MAX_ITEM:
+                return Settings.maxItemSize == 0 ? "Auto" : String.valueOf(Settings.maxItemSize);
+            case LR_MAX_QUEUE:
+                return Settings.maxQueueSize == 0 ? "Auto" : String.valueOf(Settings.maxQueueSize);
+            case LR_FORCE_DB:
+                return "Clear cache and reload library";
             case LR_BB_WIFI:
                 return Settings.bbWifiEnabled
                     ? "Force WiFi routing: On"
@@ -366,6 +388,29 @@ public class SettingsForm extends Canvas implements CommandListener {
                 Settings.save();
                 repaint();
                 break;
+            case LR_DB_RELOAD:
+                if (Settings.dbReloadInterval == 5) Settings.dbReloadInterval = 10;
+                else if (Settings.dbReloadInterval == 10) Settings.dbReloadInterval = -1;
+                else if (Settings.dbReloadInterval == -1) Settings.dbReloadInterval = 0;
+                else if (Settings.dbReloadInterval == 0) Settings.dbReloadInterval = 1;
+                else Settings.dbReloadInterval = 5;
+                Settings.save();
+                repaint();
+                break;
+            case LR_MAX_ITEM:
+                openNumericDialog("Max Item Size", Settings.maxItemSize, true);
+                break;
+            case LR_MAX_QUEUE:
+                openNumericDialog("Max Queue Size", Settings.maxQueueSize, false);
+                break;
+            case LR_FORCE_DB:
+                com.amplayer.utils.LibraryDb.clearAllDb();
+                midlet.syncLibrary(true, new Runnable() {
+                    public void run() {
+                        display.setCurrent(SettingsForm.this);
+                    }
+                });
+                break;
             case LR_BB_WIFI:
                 Settings.bbWifiEnabled = !Settings.bbWifiEnabled;
                 Settings.save();
@@ -410,6 +455,34 @@ public class SettingsForm extends Canvas implements CommandListener {
                         Settings.cacheMb = mb;
                         Settings.save();
                         PlaybackManager.setCacheSize(mb);
+                    } catch (NumberFormatException ignored) {}
+                }
+                display.setCurrent(self);
+                repaint();
+            }
+        });
+        display.setCurrent(form);
+    }
+    
+    private void openNumericDialog(final String title, int current, final boolean isItem) {
+        final Form form = new Form(title);
+        form.append(new StringItem("", "Enter limit (0 for auto):"));
+        final TextField tf = new TextField("Limit", String.valueOf(current), 5, TextField.NUMERIC);
+        form.append(tf);
+        Command ok     = new Command("OK",     Command.OK,   1);
+        Command cancel = new Command("Cancel", Command.BACK, 2);
+        form.addCommand(ok);
+        form.addCommand(cancel);
+        final SettingsForm self = this;
+        form.setCommandListener(new CommandListener() {
+            public void commandAction(Command c, Displayable d) {
+                if (c.getCommandType() == Command.OK) {
+                    try {
+                        int v = Integer.parseInt(tf.getString().trim());
+                        if (v < 0) v = 0;
+                        if (isItem) Settings.maxItemSize = v;
+                        else Settings.maxQueueSize = v;
+                        Settings.save();
                     } catch (NumberFormatException ignored) {}
                 }
                 display.setCurrent(self);

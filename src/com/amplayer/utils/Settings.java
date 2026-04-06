@@ -21,6 +21,10 @@ import javax.microedition.rms.RecordStore;
  * toggled independently. Performance mode applies presets for both, but an
  * explicit user toggle (records 7/8) always takes precedence after load.
  * queryLimit is derived-only (not persisted).
+ *
+ *   Record 11 — dbReloadInterval    (int: 0, 1, 5, 10, -1) default 5
+ *   Record 12 — maxItemSize         (int: 0=auto, 100, 500, 1000...) default 0
+ *   Record 13 — maxQueueSize        (int: 0=auto, 100, 500, 1000...) default 0
  */
 public class Settings {
 
@@ -50,6 +54,11 @@ public class Settings {
     public static String  performanceMode  = "auto";
     public static boolean artEnabled       = true;
 
+    // Database / Cache settings
+    public static int dbReloadInterval = 5;
+    public static int maxItemSize      = 0;
+    public static int maxQueueSize     = 0;
+
     // -------------------------------------------------------------------------
     // Derived / runtime flags (not persisted directly)
     // -------------------------------------------------------------------------
@@ -59,6 +68,16 @@ public class Settings {
     public static boolean bbWifiEnabled    = false;  // persisted as record 9
     public static boolean cjkImageRender  = false;  // persisted as record 10
     public static int     queryLimit      = 100;   // derived-only
+    
+    public static int getMaxItemSize() {
+        if (maxItemSize > 0) return maxItemSize;
+        return lowMemoryMode ? 100 : 500;
+    }
+    
+    public static int getMaxQueueSize() {
+        if (maxQueueSize > 0) return maxQueueSize;
+        return lowMemoryMode ? 100 : 500;
+    }
 
     // -------------------------------------------------------------------------
     // Load / save
@@ -151,6 +170,15 @@ public class Settings {
                 if (n2 >= 8)  preloadEnabled  = "1".equals(readRec(rs2, 8));
                 if (n2 >= 9)  bbWifiEnabled   = "1".equals(readRec(rs2, 9));
                 if (n2 >= 10) cjkImageRender  = "1".equals(readRec(rs2, 10));
+                if (n2 >= 11) {
+                    try { dbReloadInterval = Integer.parseInt(readRec(rs2, 11).trim()); } catch (Exception e) {}
+                }
+                if (n2 >= 12) {
+                    try { maxItemSize = Integer.parseInt(readRec(rs2, 12).trim()); } catch (Exception e) {}
+                }
+                if (n2 >= 13) {
+                    try { maxQueueSize = Integer.parseInt(readRec(rs2, 13).trim()); } catch (Exception e) {}
+                }
             } catch (Exception ignored) {
             } finally {
                 closeQuietly(rs2);
@@ -174,6 +202,9 @@ public class Settings {
             writeRec(rs, preloadEnabled   ? "1" : "0");
             writeRec(rs, bbWifiEnabled    ? "1" : "0");
             writeRec(rs, cjkImageRender   ? "1" : "0");
+            writeRec(rs, String.valueOf(dbReloadInterval));
+            writeRec(rs, String.valueOf(maxItemSize));
+            writeRec(rs, String.valueOf(maxQueueSize));
         } catch (Exception ignored) {
         } finally {
             closeQuietly(rs);
