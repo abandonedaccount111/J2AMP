@@ -23,6 +23,8 @@ import com.amplayer.ui.SearchForm;
 import com.amplayer.ui.SettingsForm;
 import com.amplayer.ui.TokenSetupForm;
 import com.amplayer.ui.VisualizerCanvas;
+import com.amplayer.utils.LibraryDb;
+import com.amplayer.utils.LibraryDb.DbResult;
 import com.amplayer.utils.Settings;
 import com.amplayer.utils.TokenStore;
 import java.util.Hashtable;
@@ -32,6 +34,8 @@ import javax.microedition.lcdui.AlertType;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
 import javax.microedition.lcdui.Gauge;
+import javax.microedition.lcdui.TextBox;
+import javax.microedition.lcdui.TextField;
 
 
 
@@ -63,6 +67,21 @@ public class AppleMusicMIDlet extends MIDlet {
 
     protected void startApp() throws MIDletStateChangeException {
         display = Display.getDisplay(this);
+        
+        if (Settings.getSupportedMp4ContentType() == null) {
+            final Alert alert = new Alert(
+                "Unsupported Device", "Your device is missing audio/mp4 playback support required by Apple Music.", 
+                null, AlertType.ERROR);
+            alert.setTimeout(Alert.FOREVER);
+            alert.setCommandListener(new CommandListener() {
+                public void commandAction(Command c, Displayable d) {
+                    notifyDestroyed();
+                }
+            });
+            display.setCurrent(alert);
+            return;
+        }
+
         Settings.load();
         PlaybackManager.setCacheSize(Settings.cacheMb);
         PlaybackManager.clearCache();   // remove any leftover files from a previous session
@@ -508,23 +527,64 @@ public class AppleMusicMIDlet extends MIDlet {
         list.setRefreshAction(new Runnable() {
             public void run() { showLibraryItems(title, endpoint, itemType, dbType, true); }
         });
-        final javax.microedition.lcdui.TextBox searchBox = new javax.microedition.lcdui.TextBox("Filter " + title, "", 64, javax.microedition.lcdui.TextField.ANY);
-        searchBox.addCommand(new javax.microedition.lcdui.Command("Filter", javax.microedition.lcdui.Command.OK, 1));
-        searchBox.addCommand(new javax.microedition.lcdui.Command("Cancel", javax.microedition.lcdui.Command.BACK, 2));
-        searchBox.setCommandListener(new javax.microedition.lcdui.CommandListener() {
-            public void commandAction(javax.microedition.lcdui.Command c, Displayable d) {
-                if (c.getCommandType() == javax.microedition.lcdui.Command.OK) {
+        list.setSearchListener(new LazyList.SearchListener() {
+            public void onSearchChanged(final String query) {
+                new Thread(new Runnable() {
+                    public void run() {
+                        String q = query.trim();
+                        if (q.length() == 0) q = null;
+                        final DbResult res2 = LibraryDb.read(dbType, q);
+                        display.callSerially(new Runnable() {
+                            public void run() {
+                                if (res2 != null) {
+                                    String[] types2 = new String[res2.length];
+                                    BaseAction[] actionsArr2 = new BaseAction[res2.length];
+                                    for (int i = 0; i < res2.length; i++) {
+                                        types2[i] = itemType;
+                                        if ("song".equals(itemType)) actionsArr2[i] = new BaseAction("play", res2.ids[i], "");
+                                        else if ("album".equals(itemType)) actionsArr2[i] = new BaseAction("open_album", res2.ids[i], "");
+                                        else actionsArr2[i] = new BaseAction("open_playlist", res2.ids[i], "");
+                                    }
+                                    list.setItems(types2, res2.titles, res2.subnames, actionsArr2);
+                                }
+                            }
+                        });
+                    }
+                }).start();
+            }
+        });
+
+        final TextBox searchBox = new TextBox("Filter " + title, "", 64, TextField.ANY);
+        searchBox.addCommand(new Command("Filter", Command.OK, 1));
+        searchBox.addCommand(new Command("Cancel", Command.BACK, 2));
+        searchBox.setCommandListener(new CommandListener() {
+            public void commandAction(Command c, Displayable d) {
+                if (c.getCommandType() == Command.OK) {
+                    final String userQ = searchBox.getString().trim();
+                    list.setInlineSearchQuery(userQ);
                     list.setTitle(title + " (Filtering...)");
                     display.setCurrent(list);
                     new Thread(new Runnable() {
                         public void run() {
-                            String q = searchBox.getString().trim();
-                            if (q.length() == 0) q = null;
+                            String q = userQ.length() == 0 ? null : userQ;
                             final com.amplayer.utils.LibraryDb.DbResult res2 = com.amplayer.utils.LibraryDb.read(dbType, q);
                             display.callSerially(new Runnable() {
                                 public void run() {
-                                    if (res2 != null) displayCachedLibraryItems(title, itemType, res2, dbType, endpoint);
-                                    else display.setCurrent(list); // restore
+                                    if (res2 != null) {
+                                        String[] types2 = new String[res2.length];
+                                        BaseAction[] actionsArr2 = new BaseAction[res2.length];
+                                        for (int i = 0; i < res2.length; i++) {
+                                            types2[i] = itemType;
+                                            if ("song".equals(itemType)) actionsArr2[i] = new BaseAction("play", res2.ids[i], "");
+                                            else if ("album".equals(itemType)) actionsArr2[i] = new BaseAction("open_album", res2.ids[i], "");
+                                            else actionsArr2[i] = new BaseAction("open_playlist", res2.ids[i], "");
+                                        }
+                                        list.setTitle(title);
+                                        list.setItems(types2, res2.titles, res2.subnames, actionsArr2);
+                                    } else {
+                                        list.setTitle(title);
+                                        display.setCurrent(list);
+                                    }
                                 }
                             });
                         }
@@ -537,7 +597,7 @@ public class AppleMusicMIDlet extends MIDlet {
         
         list.setSearchAction(new Runnable() {
             public void run() {
-                searchBox.setString("");
+                searchBox.setString(list.getInlineSearchQuery());
                 display.setCurrent(searchBox);
             }
         });

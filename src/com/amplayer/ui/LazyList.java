@@ -44,6 +44,10 @@ public class LazyList extends Canvas implements CommandListener {
         void onContextAction(int index, String type, String name,
                              String sub, BaseAction action, String tag);
     }
+    
+    public interface SearchListener {
+        void onSearchChanged(String query);
+    }
 
     // -------------------------------------------------------------------------
     // Colors  (same palette as BaseList)
@@ -97,6 +101,14 @@ public class LazyList extends Canvas implements CommandListener {
     private       Runnable          refreshAction;
     private       Runnable          searchAction;
     private       ContextListener   contextListener;
+    private       SearchListener    searchListener;
+    private       String            inlineSearchQuery = "";
+    
+    public String getInlineSearchQuery() { return inlineSearchQuery; }
+    public void setInlineSearchQuery(String q) { 
+        this.inlineSearchQuery = (q == null) ? "" : q; 
+        repaint(); 
+    }
 
     // Context menu items (max 4)
     private final String[] contextLabels = new String[4];
@@ -208,6 +220,33 @@ public class LazyList extends Canvas implements CommandListener {
         repaint();
     }
 
+    public synchronized void setItems(String[] newTypes, String[] newNames,
+                                      String[] newSubs, BaseAction[] newActions) {
+        int len = (newTypes != null) ? newTypes.length : 0;
+        if (types == null || types.length < len) {
+            int cap = Math.max(len, 32);
+            types = new String[cap];
+            names = new String[cap];
+            subs  = new String[cap];
+            actions = new BaseAction[cap];
+        }
+        if (len > 0) {
+            System.arraycopy(newTypes, 0, types, 0, len);
+            System.arraycopy(newNames, 0, names, 0, len);
+            System.arraycopy(newSubs,  0, subs,  0, len);
+            System.arraycopy(newActions, 0, actions, 0, len);
+        }
+        loadedCount = len;
+        
+        selectedIndex = 0;
+        scrollPx = 0;
+        nextUrl = null;
+        loadingMore = false;
+        loadScheduled = false;
+        mqReset();
+        repaint();
+    }
+
     // -------------------------------------------------------------------------
     // Accessors for queue building
     // -------------------------------------------------------------------------
@@ -235,10 +274,11 @@ public class LazyList extends Canvas implements CommandListener {
     }
     public void setSearchAction(Runnable r) { 
         this.searchAction = r; 
-        if (!isNokia && r != null) { addCommand(new Command("Search", Command.ITEM, 3)); }
     }
 
     public void setContextListener(ContextListener l) { this.contextListener = l; }
+
+    public void setSearchListener(SearchListener l) { this.searchListener = l; }
 
     /** Register an extra context-menu item (Nokia menu + non-Nokia command). */
     public void addContextItem(Command cmd, String tag) {
@@ -258,7 +298,8 @@ public class LazyList extends Canvas implements CommandListener {
         int w   = getWidth();
         int h   = getHeight();
         int skH = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
-        int listH = h - TITLE_BAR_H - skH;
+        int searchH = (searchListener != null) ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int listH = h - TITLE_BAR_H - searchH - skH;
         if (listH < 1) listH = 1;
 
         int lc, lm;
@@ -273,13 +314,48 @@ public class LazyList extends Canvas implements CommandListener {
         g.fillRect(0, 0, w, TITLE_BAR_H);
         g.setFont(TITLE_FONT);
         g.setColor(COLOR_NAME);
-        g.drawString(getTitle(), PAD, PAD, Graphics.LEFT | Graphics.TOP);
+        g.drawString(clip(getTitle(), TITLE_FONT, w - PAD * 2), PAD, PAD, Graphics.LEFT | Graphics.TOP);
         g.setColor(COLOR_ACCENT);
         g.fillRect(0, TITLE_BAR_H - 2, w, 2);
 
+        // Search Box (pinned)
+        if (searchH > 0) {
+            int y = TITLE_BAR_H;
+            g.setColor(selectedIndex == -1 ? COLOR_SELECTED : COLOR_BG);
+            g.fillRect(0, y, w, searchH);
+            if (selectedIndex == -1) {
+                g.setColor(COLOR_ACCENT);
+                g.fillRect(0, y, ACCENT_W, searchH);
+            }
+            g.setColor(COLOR_DIVIDER);
+            g.drawRect(PAD + ACCENT_W, y + 4, w - PAD * 2 - ACCENT_W * 2, searchH - 8);
+            
+            // Safely render the text inside the rect bounds via Graphics clipping
+            int sx = g.getClipX(), sy2 = g.getClipY(), sw = g.getClipWidth(), sh = g.getClipHeight();
+            g.setClip(PAD + ACCENT_W + 4, y, w - PAD * 4 - ACCENT_W * 2, searchH);
+            
+            g.setFont(SUBNAME_FONT);
+            g.setColor(inlineSearchQuery.length() > 0 ? COLOR_NAME : COLOR_SUBNAME);
+            
+            String txt = inlineSearchQuery;
+            if (txt.length() == 0) txt = "Search...";
+            if (selectedIndex == -1) {
+                if (txt.equals("Search...")) txt = "Search...|";
+                else txt += "|";
+            }
+            
+            g.drawString(txt, PAD + ACCENT_W + 4, y + PAD, Graphics.LEFT | Graphics.TOP);
+            
+            // Restore clip
+            g.setClip(sx, sy2, sw, sh);
+                         
+            g.setColor(COLOR_DIVIDER);
+            g.drawLine(0, y + searchH - 1, w, y + searchH - 1);
+        }
+
         // Clip list area
         int cx = g.getClipX(), cy = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
-        g.setClip(0, TITLE_BAR_H, w, listH);
+        g.setClip(0, TITLE_BAR_H + searchH, w, listH);
 
         int totalRows = lc + lm;
 
@@ -299,7 +375,7 @@ public class LazyList extends Canvas implements CommandListener {
         int availW   = w - textX - PAD - 3; // -3 for scroll bar
 
         for (int i = firstRow; i < lastRow; i++) {
-            int y = TITLE_BAR_H + i * ITEM_H - scrollPx;
+            int y = TITLE_BAR_H + searchH + i * ITEM_H - scrollPx;
 
             if (i == lc) {
                 // "Loading..." footer row
@@ -359,9 +435,9 @@ public class LazyList extends Canvas implements CommandListener {
         int totalH = totalRows * ITEM_H;
         if (totalH > listH) {
             int barH = Math.max(8, listH * listH / totalH);
-            int barY = TITLE_BAR_H + (listH - barH) * scrollPx / Math.max(1, totalH - listH);
+            int barY = TITLE_BAR_H + searchH + (listH - barH) * scrollPx / Math.max(1, totalH - listH);
             g.setColor(0x3A3A3C);
-            g.fillRect(w - 3, TITLE_BAR_H, 3, listH);
+            g.fillRect(w - 3, TITLE_BAR_H + searchH, 3, listH);
             g.setColor(COLOR_ACCENT);
             g.fillRect(w - 3, barY, 3, barH);
         }
@@ -404,12 +480,27 @@ public class LazyList extends Canvas implements CommandListener {
         if      (action == UP)                       moveUp();
         else if (action == DOWN)                     moveDown();
         else if (action == FIRE || keyCode == -5)    fireSelection();
+        else if (searchListener != null) {
+            if (keyCode == 8 && inlineSearchQuery.length() > 0) {
+                inlineSearchQuery = inlineSearchQuery.substring(0, inlineSearchQuery.length() - 1);
+                searchListener.onSearchChanged(inlineSearchQuery);
+                repaint();
+            } else {
+                char c = (char) keyCode;
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ') {
+                    inlineSearchQuery += c;
+                    searchListener.onSearchChanged(inlineSearchQuery);
+                    repaint();
+                }
+            }
+        }
     }
 
     protected void keyRepeated(int keyCode) { keyPressed(keyCode); }
 
     private void moveUp() {
-        if (selectedIndex > 0) {
+        int minIdx = (searchListener != null) ? -1 : 0;
+        if (selectedIndex > minIdx) {
             selectedIndex--;
             mqReset();
             ensureVisible();
@@ -429,8 +520,10 @@ public class LazyList extends Canvas implements CommandListener {
     }
 
     private void ensureVisible() {
+        if (selectedIndex == -1) return; // Search box is always pinned
         int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
-        int listH = getHeight() - TITLE_BAR_H - skH;
+        int searchH = (searchListener != null) ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int listH = getHeight() - TITLE_BAR_H - searchH - skH;
         if (listH < ITEM_H) return;
         int absY = selectedIndex * ITEM_H;
         if (absY < scrollPx) {
@@ -455,6 +548,10 @@ public class LazyList extends Canvas implements CommandListener {
     }
 
     private void fireSelection() {
+        if (selectedIndex == -1 && searchAction != null) {
+            searchAction.run();
+            return;
+        }
         if (itemListener == null) return;
         int lc;
         synchronized (this) { lc = loadedCount; }

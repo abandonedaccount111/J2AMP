@@ -52,7 +52,7 @@ public class MainMenu extends Canvas implements CommandListener {
         "Search",
         "Songs",
         "Albums",
-        "Playlist",
+        "Playlists",
         "Settings"
     };
 

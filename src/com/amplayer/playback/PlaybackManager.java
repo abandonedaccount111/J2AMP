@@ -283,7 +283,7 @@ public class PlaybackManager implements PlayerListener {
             fc = (FileConnection) Connector.open(path, Connector.READ);
             if (!fc.exists() || fc.fileSize() == 0) return false;
             in     = fc.openInputStream();
-            player = Manager.createPlayer(in, "audio/mp4");
+            player = Manager.createPlayer(in, Settings.getSupportedMp4ContentType());
             player.realize();
             player.prefetch();
             VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
@@ -307,7 +307,7 @@ public class PlaybackManager implements PlayerListener {
     private synchronized void startPlayback(byte[] data) throws Exception {
         stopPlayer();
         ByteArrayInputStream bais = new ByteArrayInputStream(data);
-        player = Manager.createPlayer(bais, "audio/mp4");
+        player = Manager.createPlayer(bais, Settings.getSupportedMp4ContentType());
         player.realize();
         player.prefetch();
         VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
@@ -551,10 +551,11 @@ public class PlaybackManager implements PlayerListener {
                     Enumeration en = fc.list();
                     while (en.hasMoreElements()) {
                         String name = (String) en.nextElement();
-                        FileConnection tmp = (FileConnection) Connector.open(
-                            dir + name);
-                        tmp.delete();
-                        tmp.close();
+                        if (name.endsWith(".mp4") || name.endsWith(".m4a")) {
+                            FileConnection tmp = (FileConnection) Connector.open(dir + name);
+                            tmp.delete();
+                            tmp.close();
+                        }
                     }
                 }
             } catch (Exception ignored) {

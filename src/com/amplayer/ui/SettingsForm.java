@@ -307,9 +307,9 @@ public class SettingsForm extends Canvas implements CommandListener {
                 if (Settings.dbReloadInterval == 0) return "Every start";
                 return "Every " + Settings.dbReloadInterval + " days";
             case LR_MAX_ITEM:
-                return Settings.maxItemSize == 0 ? "Auto" : String.valueOf(Settings.maxItemSize);
+                return Settings.maxItemSize == 0 ? "Auto (" + Settings.getMaxItemSize() + ")" : String.valueOf(Settings.maxItemSize);
             case LR_MAX_QUEUE:
-                return Settings.maxQueueSize == 0 ? "Auto" : String.valueOf(Settings.maxQueueSize);
+                return Settings.maxQueueSize == 0 ? "Auto (" + Settings.getMaxQueueSize() + ")" : String.valueOf(Settings.maxQueueSize);
             case LR_FORCE_DB:
                 return "Clear cache and reload library";
             case LR_BB_WIFI:

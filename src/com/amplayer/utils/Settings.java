@@ -1,6 +1,7 @@
 package com.amplayer.utils;
 
 import javax.microedition.rms.RecordStore;
+import javax.microedition.media.Manager;
 
 /**
  * Global app settings persisted in RMS store "AMSettings".
@@ -67,7 +68,22 @@ public class Settings {
     public static boolean preloadEnabled  = true;   // persisted as record 8
     public static boolean bbWifiEnabled    = false;  // persisted as record 9
     public static boolean cjkImageRender  = false;  // persisted as record 10
-    public static int     queryLimit      = 100;   // derived-only
+    public static int     queryLimit      = 100;    // derived-only
+    public static String  audioContentType = getSupportedMp4ContentType(); // derived
+    
+    public static String getSupportedMp4ContentType() {
+        String[] types = Manager.getSupportedContentTypes(null);
+        
+        if (types != null) {
+            for (int i = 0; i < types.length; i++) {
+                System.out.println("Supported content types: " + types[i]);
+                if (types[i] != null && (types[i].toLowerCase().indexOf("mp4") >= 0 || types[i].toLowerCase().indexOf("m4a") >= 0)) {
+                    return types[i];
+                }
+            }
+        }
+        return null;
+    }
     
     public static int getMaxItemSize() {
         if (maxItemSize > 0) return maxItemSize;
