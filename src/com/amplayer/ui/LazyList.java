@@ -447,6 +447,107 @@ public class LazyList extends Canvas implements CommandListener {
     }
 
     // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private int startY_T = -1;
+    private int startOffset_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T = 0;
+
+    protected void pointerPressed(int x, int y) {
+        startY_T = y;
+        startOffset_T = scrollPx;
+        isDragging_T = false;
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (nokiaMenuOpen) return;
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            int newScroll = startOffset_T + (startY_T - y);
+            
+            int skH     = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int searchH = (searchListener != null) ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int listH   = getHeight() - TITLE_BAR_H - searchH - skH;
+            int totalRows = Math.max(loadedCount, 1) + (loadingMore ? 1 : 0);
+            int totalH  = totalRows * ITEM_H;
+            int maxScroll = Math.max(0, totalH - listH);
+            
+            if (newScroll < 0) newScroll = 0;
+            if (newScroll > maxScroll) newScroll = maxScroll;
+            
+            if (scrollPx != newScroll) {
+                scrollPx = newScroll;
+                repaint();
+            }
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int skH = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int h = getHeight();
+            int w = getWidth();
+
+            if (nokiaMenuOpen) {
+                int extraOpts = 0;
+                if (refreshAction != null) extraOpts++;
+                if (searchAction != null) extraOpts++;
+                int menuSize = 1 + contextCount + extraOpts;
+                int itemH    = SUBNAME_FONT.getHeight() + 6;
+                int menuH    = itemH * menuSize + PAD * 2;
+                int menuY    = h - skH - menuH;
+
+                if (y >= menuY && y <= menuY + menuH) {
+                    int clickedIdx = (y - menuY - PAD) / itemH;
+                    if (clickedIdx >= 0 && clickedIdx < menuSize) {
+                        nokiaMenuSel = clickedIdx;
+                        nokiaMenuOpen = false;
+                        executeNokiaMenuItem(nokiaMenuSel);
+                        repaint();
+                    }
+                } else if (y > h - skH) { // Softkey bar
+                    if (x > w / 2) { nokiaMenuOpen = false; repaint(); } // Close
+                    else           { nokiaMenuOpen = false; executeNokiaMenuItem(nokiaMenuSel); repaint(); }
+                } else {
+                    nokiaMenuOpen = false; repaint();
+                }
+                return;
+            }
+
+            if (isNokia && y > h - skH) {
+                if (x > w / 2) {
+                    if (backAction != null) backAction.run();
+                } else {
+                    nokiaMenuOpen = true; nokiaMenuSel = 0; repaint();
+                }
+                return;
+            }
+
+            int searchH = (searchListener != null) ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int listTop = TITLE_BAR_H + searchH;
+            
+            if (y >= listTop) {
+                int clickedIndex = (scrollPx + (y - listTop)) / ITEM_H;
+                int totalRows = Math.max(loadedCount, 1) + (loadingMore ? 1 : 0);
+                if (clickedIndex >= 0 && clickedIndex < totalRows) {
+                    if (clickedIndex < loadedCount) {
+                        selectedIndex = clickedIndex;
+                        repaint();
+                        executeNokiaMenuItem(0); // fires selection
+                    }
+                }
+            } else if (y >= TITLE_BAR_H && y < listTop) {
+                // Tapped search box
+                selectedIndex = -1;
+                repaint();
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Key input
     // -------------------------------------------------------------------------
 

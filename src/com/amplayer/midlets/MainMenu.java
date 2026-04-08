@@ -278,7 +278,61 @@ public class MainMenu extends Canvas implements CommandListener {
     }
 
     // -------------------------------------------------------------------------
-    // Key handling
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private int startY_T = -1;
+    private int startOffset_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T = 0;
+
+    protected void pointerPressed(int x, int y) {
+        startY_T = y;
+        startOffset_T = scrollOffset;
+        isDragging_T = false;
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            int deltaItems = (startY_T - y) / ITEM_H;
+            int newOffset = startOffset_T + deltaItems;
+            
+            int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int listH = getHeight() - STATUS_BAR_H - skH;
+            int vis   = listH / ITEM_H;
+            int maxScroll = Math.max(0, LABELS.length - vis);
+            
+            if (newOffset < 0) newOffset = 0;
+            if (newOffset > maxScroll) newOffset = maxScroll;
+            
+            if (scrollOffset != newOffset) {
+                scrollOffset = newOffset;
+                // keep selection somewhat in view
+                if (selectedIndex < scrollOffset) selectedIndex = scrollOffset;
+                if (selectedIndex >= scrollOffset + vis) selectedIndex = scrollOffset + vis - 1;
+                repaint();
+            }
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int listTop = STATUS_BAR_H;
+            if (y >= listTop) {
+                int clickedIndex = scrollOffset + (y - listTop) / ITEM_H;
+                if (clickedIndex >= 0 && clickedIndex < LABELS.length) {
+                    selectedIndex = clickedIndex;
+                    repaint();
+                    fireSelection();
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Input
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {

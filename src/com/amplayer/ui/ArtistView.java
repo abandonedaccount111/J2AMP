@@ -583,6 +583,97 @@ public class ArtistView extends Canvas implements CommandListener {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private int startY_T = -1;
+    private int startOffset_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T = 0;
+
+    protected void pointerPressed(int x, int y) {
+        startY_T = y;
+        startOffset_T = scrollPx;
+        isDragging_T = false;
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (nokiaMenuOpen) return;
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            int newScroll = startOffset_T + (startY_T - y);
+            
+            int skH    = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int listH  = getHeight() - TITLE_H - skH;
+            int totalH = rowCount > 0 ? rowYPos[rowCount] : 0;
+            int maxScroll = Math.max(0, totalH - listH);
+            
+            if (newScroll < 0) newScroll = 0;
+            if (newScroll > maxScroll) newScroll = maxScroll;
+            
+            if (scrollPx != newScroll) {
+                scrollPx = newScroll;
+                repaint();
+            }
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int skH = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int h = getHeight();
+            int w = getWidth();
+
+            if (nokiaMenuOpen) {
+                int menuSize = NOKIA_MENU_ITEMS.length;
+                int itemH    = SUB_FONT.getHeight() + 6;
+                int menuH    = itemH * menuSize + PAD * 2;
+                int menuY    = h - skH - menuH;
+
+                if (y >= menuY && y <= menuY + menuH) {
+                    int clickedIdx = (y - menuY - PAD) / itemH;
+                    if (clickedIdx >= 0 && clickedIdx < menuSize) {
+                        nokiaMenuSel = clickedIdx;
+                        nokiaMenuOpen = false;
+                        executeNokiaMenuItem(nokiaMenuSel);
+                        repaint();
+                    }
+                } else if (y > h - skH) { // Softkey bar
+                    if (x > w / 2) { nokiaMenuOpen = false; repaint(); } // Close
+                    else           { nokiaMenuOpen = false; executeNokiaMenuItem(nokiaMenuSel); repaint(); }
+                } else {
+                    nokiaMenuOpen = false; repaint();
+                }
+                return;
+            }
+
+            if (isNokia && y > h - skH) {
+                if (x > w / 2) {
+                    display.setCurrent(backScreen);
+                } else {
+                    nokiaMenuOpen = true; nokiaMenuSel = 0; repaint();
+                }
+                return;
+            }
+
+            if (y >= TITLE_H) {
+                int absY = scrollPx + (y - TITLE_H);
+                for (int i = 0; i < rowCount; i++) {
+                    if (absY >= rowYPos[i] && absY < rowYPos[i + 1]) {
+                        if (!"header".equals(rowTypes[i])) {
+                            selectedIndex = i;
+                            repaint();
+                            executeNokiaMenuItem(0); // fires selection
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     protected void keyRepeated(int keyCode) { keyPressed(keyCode); }
 
     protected void showNotify() { mqStart(); }

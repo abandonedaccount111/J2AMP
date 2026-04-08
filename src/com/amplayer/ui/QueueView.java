@@ -162,6 +162,108 @@ public class QueueView extends Canvas
         if (mqOffset >= mqMaxOvf) { mqOffset = 0; mqPause = MQ_PAUSE; }
     }
 
+    // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private int startY_T = -1;
+    private int startOffset_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T = 0;
+
+    protected void pointerPressed(int x, int y) {
+        startY_T = y;
+        startOffset_T = scrollOffset;
+        isDragging_T = false;
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (nokiaMenuOpen) return;
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            int itemH = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
+            int deltaItems = (startY_T - y) / itemH;
+            int newOffset = startOffset_T + deltaItems;
+
+            int hdrH = HDR_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2 + 2;
+            int listTop = hdrH + 1;
+            int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int listH = getHeight() - listTop - skH;
+
+            int visible = listH / itemH;
+            if (visible < 1) visible = 1;
+            int count = pm.getTrackCount();
+            int maxScroll = Math.max(0, count - visible);
+
+            if (newOffset < 0) newOffset = 0;
+            if (newOffset > maxScroll) newOffset = maxScroll;
+
+            if (scrollOffset != newOffset) {
+                scrollOffset = newOffset;
+                if (selectedIndex < scrollOffset) selectedIndex = scrollOffset;
+                if (selectedIndex >= scrollOffset + visible) selectedIndex = scrollOffset + visible - 1;
+                repaint();
+            }
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int skH = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int h = getHeight();
+            int w = getWidth();
+
+            if (nokiaMenuOpen) {
+                int itemH  = NAME_FONT.getHeight() + 6;
+                int menuSize = nokiaMenuItems.length;
+                int menuH  = itemH * menuSize + PAD * 2;
+                int menuY  = h - skH - menuH;
+
+                if (y >= menuY && y <= menuY + menuH) {
+                    int clickedIdx = (y - menuY - PAD) / itemH;
+                    if (clickedIdx >= 0 && clickedIdx < menuSize) {
+                        nokiaMenuSel = clickedIdx;
+                        nokiaMenuOpen = false;
+                        executeNokiaMenuItem(nokiaMenuSel);
+                        repaint();
+                    }
+                } else if (y > h - skH) { // Softkey bar
+                    if (x > w / 2) { nokiaMenuOpen = false; repaint(); } // Close
+                    else           { nokiaMenuOpen = false; executeNokiaMenuItem(nokiaMenuSel); repaint(); }
+                } else {
+                    nokiaMenuOpen = false; repaint();
+                }
+                return;
+            }
+
+            if (isNokia && y > h - skH) {
+                if (x > w / 2) {
+                    pm.setListener(prevListener);
+                    display.setCurrent(backScreen);
+                } else {
+                    nokiaMenuOpen = true; nokiaMenuSel = 0; repaint();
+                }
+                return;
+            }
+
+            int hdrH = HDR_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2 + 2;
+            int listTop = hdrH + 1;
+
+            if (y >= listTop) {
+                int itemH = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
+                int clickedIndex = scrollOffset + (y - listTop) / itemH;
+                int count = pm.getTrackCount();
+                if (clickedIndex >= 0 && clickedIndex < count) {
+                    selectedIndex = clickedIndex;
+                    mqReset();
+                    repaint();
+                    jumpToSelected(); // fire selection
+                }
+            }
+        }
+    }
+
     protected void keyPressed(int keyCode) {
         if (isNokia) {
             if (keyCode == -6) {

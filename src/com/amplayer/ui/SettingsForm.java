@@ -328,6 +328,70 @@ public class SettingsForm extends Canvas implements CommandListener {
     }
 
     // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private int startY_T = -1;
+    private int startOffset_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T = 0;
+
+    protected void pointerPressed(int x, int y) {
+        startY_T = y;
+        startOffset_T = scrollOffset;
+        isDragging_T = false;
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            int deltaItems = (startY_T - y) / ITEM_H;
+            int newOffset = startOffset_T + deltaItems;
+
+            int listH = getHeight() - HDR_H - (isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0);
+            int visible = listH / ITEM_H;
+            if (visible < 1) visible = 1;
+            int total = rowCount();
+            int maxScroll = Math.max(0, total - visible);
+
+            if (newOffset < 0) newOffset = 0;
+            if (newOffset > maxScroll) newOffset = maxScroll;
+
+            if (scrollOffset != newOffset) {
+                scrollOffset = newOffset;
+                if (selectedIndex < scrollOffset) selectedIndex = scrollOffset;
+                if (selectedIndex >= scrollOffset + visible) selectedIndex = scrollOffset + visible - 1;
+                repaint();
+            }
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int skH = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int h = getHeight();
+            int w = getWidth();
+
+            if (isNokia && y > h - skH) {
+                if (x > w / 2) display.setCurrent(backScreen);
+                else activate(logicalRow(selectedIndex));
+                return;
+            }
+
+            if (y >= HDR_H) {
+                int clickedIndex = scrollOffset + (y - HDR_H) / ITEM_H;
+                int total = rowCount();
+                if (clickedIndex >= 0 && clickedIndex < total) {
+                    selectedIndex = clickedIndex;
+                    repaint();
+                    activate(logicalRow(selectedIndex));
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Key input
     // -------------------------------------------------------------------------
 

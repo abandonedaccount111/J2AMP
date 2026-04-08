@@ -46,6 +46,7 @@ public class DetailView extends Canvas implements CommandListener {
     private static final Font NAME_FONT    = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD,  Font.SIZE_MEDIUM);
     private static final Font SUBNAME_FONT = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_PLAIN, Font.SIZE_SMALL);
 
+
     private static final int PAD            = 8;
     private static final int COLOR_ERROR    = 0xFF3B30;
 
@@ -619,6 +620,111 @@ public class DetailView extends Canvas implements CommandListener {
         if (mqPause > 0)   { mqPause--;    return; }
         mqOffset += MQ_SPEED;
         if (mqOffset >= mqMaxOvf) { mqOffset = 0; mqPause = MQ_PAUSE; }
+    }
+
+    // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private int startY_T = -1;
+    private int startOffset_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T = 0;
+
+    protected void pointerPressed(int x, int y) {
+        startY_T = y;
+        startOffset_T = scrollOffset;
+        isDragging_T = false;
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (nokiaMenuOpen) return;
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            int itemH = trackItemH();
+            int deltaItems = (startY_T - y) / itemH;
+            int newOffset = startOffset_T + deltaItems;
+
+            int h = getHeight();
+            int hdY  = PAD + ((h > PAD * 4) ? h / 3 : 100) + PAD;
+            int hdH  = HEADER_FONT.getHeight() + PAD + NAME_FONT.getHeight() + PAD;
+            int listY = hdY + hdH;
+            int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int listH = h - listY - skH;
+
+            int visible = listH / itemH;
+            if (visible < 1) visible = 1;
+            int totalRows = trackCount + (loadingMoreTracks ? 1 : 0);
+            int maxScroll = Math.max(0, totalRows - visible);
+
+            if (newOffset < 0) newOffset = 0;
+            if (newOffset > maxScroll) newOffset = maxScroll;
+
+            if (scrollOffset != newOffset) {
+                scrollOffset = newOffset;
+                if (selectedIndex < scrollOffset) selectedIndex = scrollOffset;
+                if (selectedIndex >= scrollOffset + visible) selectedIndex = scrollOffset + visible - 1;
+                repaint();
+            }
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int skH = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int h = getHeight();
+            int w = getWidth();
+
+            if (nokiaMenuOpen) {
+                int menuSize = nokiaMenuItems.length;
+                int itemH    = SUBNAME_FONT.getHeight() + 6;
+                int menuH    = itemH * menuSize + PAD * 2;
+                int menuY    = h - skH - menuH;
+
+                if (y >= menuY && y <= menuY + menuH) {
+                    int clickedIdx = (y - menuY - PAD) / itemH;
+                    if (clickedIdx >= 0 && clickedIdx < menuSize) {
+                        nokiaMenuSel = clickedIdx;
+                        nokiaMenuOpen = false;
+                        executeNokiaMenuItem(nokiaMenuSel);
+                        repaint();
+                    }
+                } else if (y > h - skH) { // Softkey bar
+                    if (x > w / 2) { nokiaMenuOpen = false; repaint(); } // Close
+                    else           { nokiaMenuOpen = false; executeNokiaMenuItem(nokiaMenuSel); repaint(); }
+                } else {
+                    nokiaMenuOpen = false; repaint();
+                }
+                return;
+            }
+
+            if (isNokia && y > h - skH) {
+                if (x > w / 2) {
+                    display.setCurrent(backScreen);
+                } else {
+                    nokiaMenuOpen = true; nokiaMenuSel = 0; repaint();
+                }
+                return;
+            }
+
+            int hdY  = PAD + ((h > PAD * 4) ? h / 3 : 100) + PAD;
+            int hdH  = HEADER_FONT.getHeight() + PAD + NAME_FONT.getHeight() + PAD;
+            int listY = hdY + hdH;
+
+            if (y >= listY) {
+                int clickedIndex = scrollOffset + (y - listY) / trackItemH();
+                int totalRows = trackCount + (loadingMoreTracks ? 1 : 0);
+                if (clickedIndex >= 0 && clickedIndex < totalRows) {
+                    if (clickedIndex < trackCount) {
+                        selectedIndex = clickedIndex;
+                        mqReset();
+                        repaint();
+                        onTrackSelected(); // fire selection
+                    }
+                }
+            }
+        }
     }
 
     protected void keyPressed(int keyCode) {
