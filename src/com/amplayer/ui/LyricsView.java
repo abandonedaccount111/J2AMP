@@ -144,8 +144,8 @@ public class LyricsView extends Canvas
         pm.setListener(this);
 
         setFullScreenMode(true);
-        addCommand(CMD_BACK);
-        setCommandListener(this);
+        // addCommand(CMD_BACK);
+        // setCommandListener(this);
 
         fetchLyrics(songId);
         startTimer();
