@@ -61,6 +61,10 @@ public class AppleMusicMIDlet extends MIDlet {
     private String sourcePlaylistName;
     private String sourcePlaylistArtUrl;
 
+    // Container context for autoplay (continuous station)
+    private String sourceContainerId;     // album or playlist ID
+    private String sourceContainerType;   // "albums" or "playlists" or null
+
     // =========================================================================
     // MIDlet lifecycle
     // =========================================================================
@@ -281,6 +285,269 @@ public class AppleMusicMIDlet extends MIDlet {
 
     public void showSettings() {
         display.setCurrent(new SettingsForm(this, display, mainMenu, playbackManager));
+    }
+
+    public void showStations() {
+        final Alert loading = new Alert("Stations", "Loading...", null, AlertType.INFO);
+        loading.setTimeout(Alert.FOREVER);
+        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+        final Command cancelCmd = new Command("Cancel", Command.CANCEL, 1);
+        loading.addCommand(cancelCmd);
+        loading.setCommandListener(new CommandListener() {
+            public void commandAction(Command c, Displayable d) {
+                if (c == cancelCmd) display.setCurrent(mainMenu);
+            }
+        });
+        display.setCurrent(loading);
+
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    final AMAPI a = getAPI();
+                    JSONObject resp = a.getPersonalStations();
+                    JSONArray data = resp.getArray("data", null);
+                    if (data == null || data.size() == 0) {
+                        loading.setString("No stations found.");
+                        loading.setType(AlertType.INFO);
+                        loading.setIndicator(null);
+                        loading.setTimeout(2000);
+                        new Thread(new Runnable() {
+                            public void run() {
+                                try { Thread.sleep(2000); } catch (Exception ignored) {}
+                                display.callSerially(new Runnable() {
+                                    public void run() { display.setCurrent(mainMenu); }
+                                });
+                            }
+                        }).start();
+                        return;
+                    }
+                    int n = data.size();
+                    final String[] types   = new String[n];
+                    final String[] names   = new String[n];
+                    final String[] subs    = new String[n];
+                    final BaseAction[] acts = new BaseAction[n];
+                    for (int i = 0; i < n; i++) {
+                        JSONObject station = data.getObject(i);
+                        String id   = station.getString("id", "");
+                        JSONObject attrs = station.getObject("attributes", null);
+                        String name = (attrs != null) ? attrs.getString("name", "Station") : "Station";
+                        types[i] = "station";
+                        names[i] = name;
+                        subs[i]  = "Station";
+                        acts[i]  = new BaseAction("play_station", id, "");
+                    }
+
+                    display.callSerially(new Runnable() {
+                        public void run() {
+                            LazyList list = new LazyList("Stations", new LazyList.DataSource() {
+                                public void loadNextPage(LazyList l, String next) {}
+                            }, new LazyList.SelectionListener() {
+                                public void onItemSelected(int index, String type, String name,
+                                                           String sub, BaseAction action) {
+                                    if ("play_station".equals(action.type)) {
+                                        playStation(action.details, name);
+                                    }
+                                }
+                            });
+                            list.appendItems(types, names, subs, acts, null);
+                            list.setBackAction(new Runnable() {
+                                public void run() { display.setCurrent(mainMenu); }
+                            });
+                            display.setCurrent(list);
+                        }
+                    });
+                } catch (Exception e) {
+                    final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                    loading.setString("Error: " + msg);
+                    loading.setType(AlertType.ERROR);
+                }
+            }
+        }).start();
+    }
+
+    /**
+     * Start playing a station. Fetches the first batch of next-tracks,
+     * builds a queue, and enables station auto-queue mode on the PlaybackManager.
+     */
+    public void playStation(final String stationId, final String stationName) {
+        final Alert loading = new Alert(stationName, "Loading station...", null, AlertType.INFO);
+        loading.setTimeout(Alert.FOREVER);
+        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+        display.setCurrent(loading);
+
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    final AMAPI a = getAPI();
+                    JSONObject resp = a.getStationNextTracks(stationId);
+                    JSONArray data = resp.getArray("data", null);
+                    if (data == null || data.size() == 0)
+                        throw new Exception("No tracks returned for station");
+
+                    int n = data.size();
+                    String[] ids     = new String[n];
+                    String[] tNames  = new String[n];
+                    String[] artists = new String[n];
+                    String artUrl = "";
+                    for (int i = 0; i < n; i++) {
+                        JSONObject track = data.getObject(i);
+                        ids[i] = track.getString("id", "");
+                        JSONObject attrs = track.getObject("attributes", null);
+                        tNames[i]  = (attrs != null) ? attrs.getString("name",       "Unknown") : "Unknown";
+                        artists[i] = (attrs != null) ? attrs.getString("artistName", "")        : "";
+                        if (artUrl.length() == 0 && attrs != null) {
+                            artUrl = extractArtUrl(attrs);
+                        }
+                    }
+
+                    // Set station mode before starting playback
+                    sourcePlaylistId     = null;
+                    sourcePlaylistName   = null;
+                    sourcePlaylistArtUrl = null;
+                    playbackManager.setStationMode(stationId, makeStationQueueCallback(stationId));
+
+                    startPlayQueueInternal(ids, tNames, artists, artUrl, 0);
+                } catch (final Exception e) {
+                    final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                    display.callSerially(new Runnable() {
+                        public void run() {
+                            loading.setString("Error: " + msg);
+                            loading.setType(AlertType.ERROR);
+                            loading.setIndicator(null);
+                            loading.setTimeout(3000);
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    /**
+     * Create a callback that fetches the next batch of station tracks and appends
+     * them to the PlaybackManager queue. Called by PM when nearing end of queue.
+     */
+    private Runnable makeStationQueueCallback(final String stationId) {
+        return new Runnable() {
+            public void run() {
+                new Thread(new Runnable() {
+                    public void run() {
+                        try {
+                            AMAPI a = getAPI();
+                            JSONObject resp = a.getStationNextTracks(stationId);
+                            JSONArray data = resp.getArray("data", null);
+                            if (data == null || data.size() == 0) return;
+                            int n = data.size();
+                            String[] ids     = new String[n];
+                            String[] tNames  = new String[n];
+                            String[] artists = new String[n];
+                            for (int i = 0; i < n; i++) {
+                                JSONObject track = data.getObject(i);
+                                ids[i] = track.getString("id", "");
+                                JSONObject attrs = track.getObject("attributes", null);
+                                tNames[i]  = (attrs != null) ? attrs.getString("name",       "") : "";
+                                artists[i] = (attrs != null) ? attrs.getString("artistName", "") : "";
+                            }
+                            playbackManager.appendToQueueAndResume(ids, tNames, artists);
+                        } catch (Exception ignored) {
+                            System.out.println("Station auto-queue error: " + ignored.getMessage());
+                        }
+                    }
+                }).start();
+            }
+        };
+    }
+
+    /**
+     * Create a callback for autoplay (continuous station). When the queue ends:
+     *   1. POST /v1/me/stations/continuous with queue context → get a station ID
+     *   2. POST /v1/me/stations/next-tracks/{stationId} → get actual tracks
+     *   3. Switch PM into station mode with that ID for ongoing auto-queue
+     */
+    private Runnable makeAutoplayCallback(final String[] queueTrackIds,
+                                           final String containerId,
+                                           final String containerType) {
+        return new Runnable() {
+            public void run() {
+                new Thread(new Runnable() {
+                    public void run() {
+                        try {
+                            // Use the current PM queue for the most up-to-date track list
+                            String[] currentIds = playbackManager.getTrackIds();
+                            if (currentIds == null || currentIds.length == 0) return;
+
+                            String body = buildContinuousBody(currentIds, containerId, containerType);
+                            AMAPI a = getAPI();
+
+                            // Step 1: Get the continuous station ID
+                            JSONObject stationResp = a.getContinuousStation(body);
+                            JSONObject stationData = stationResp.getObject("results", null).getObject("station", null);
+                            if (stationData == null) {
+                                System.out.println("Autoplay: no station returned");
+                                return;
+                            }
+                            String continuousStationId = stationData.getString("id", "");
+                            if (continuousStationId.length() == 0) {
+                                System.out.println("Autoplay: empty station ID");
+                                return;
+                            }
+                            System.out.println("Autoplay: got station " + continuousStationId);
+
+                            // Step 2: Fetch tracks from that station
+                            JSONObject tracksResp = a.getStationNextTracks(continuousStationId);
+                            JSONArray data = tracksResp.getArray("data", null);
+                            if (data == null || data.size() == 0) {
+                                System.out.println("Autoplay: no tracks from station");
+                                return;
+                            }
+                            int n = data.size();
+                            String[] ids     = new String[n];
+                            String[] tNames  = new String[n];
+                            String[] artists = new String[n];
+                            for (int i = 0; i < n; i++) {
+                                JSONObject track = data.getObject(i);
+                                ids[i] = track.getString("id", "");
+                                JSONObject attrs = track.getObject("attributes", null);
+                                tNames[i]  = (attrs != null) ? attrs.getString("name",       "") : "";
+                                artists[i] = (attrs != null) ? attrs.getString("artistName", "") : "";
+                            }
+
+                            // Step 3: Switch to station mode for ongoing auto-queue
+                            playbackManager.setStationMode(
+                                continuousStationId,
+                                makeStationQueueCallback(continuousStationId));
+                            playbackManager.appendToQueueAndResume(ids, tNames, artists);
+                            System.out.println("Autoplay: appended " + n + " tracks");
+                        } catch (Exception e) {
+                            System.out.println("Autoplay error: " + e.getMessage());
+                        }
+                    }
+                }).start();
+            }
+        };
+    }
+
+    /**
+     * Build the JSON body for POST /v1/me/stations/continuous.
+     * Uses up to the last 7 tracks from the queue with optional container meta.
+     */
+    private String buildContinuousBody(String[] trackIds, String containerId, String containerType) {
+        StringBuffer sb = new StringBuffer();
+        sb.append("{\"data\":[");
+
+        // Use up to the last 7 tracks from the queue
+        int start = Math.max(0, trackIds.length - 7);
+        for (int i = start; i < trackIds.length; i++) {
+            if (i > start) sb.append(",");
+            sb.append("{\"id\":\"").append(trackIds[i]).append("\",\"type\":\"songs\"");
+            if (containerId != null && containerType != null) {
+                sb.append(",\"meta\":{\"container\":{\"id\":\"").append(containerId)
+                  .append("\",\"type\":\"").append(containerType).append("\"}}");
+            }
+            sb.append("}");
+        }
+
+        sb.append("]}");
+        return sb.toString();
     }
 
     public void showVisualizer(Displayable backScreen) {
@@ -658,6 +925,9 @@ public class AppleMusicMIDlet extends MIDlet {
         sourcePlaylistId     = null;
         sourcePlaylistName   = null;
         sourcePlaylistArtUrl = null;
+        sourceContainerId    = null;
+        sourceContainerType  = null;
+        playbackManager.clearStationMode();
         startPlayQueueInternal(trackIds, trackNames, trackArtists, artUrlTemplate, startIndex);
     }
 
@@ -673,6 +943,42 @@ public class AppleMusicMIDlet extends MIDlet {
         sourcePlaylistId     = playlistId;
         sourcePlaylistName   = playlistName;
         sourcePlaylistArtUrl = playlistArtUrl;
+        playbackManager.clearStationMode();
+        startPlayQueueInternal(trackIds, trackNames, trackArtists, artUrlTemplate, startIndex);
+    }
+
+    /**
+     * Like {@link #playQueue} but also remembers the container (album/playlist)
+     * for autoplay.
+     */
+    public void playQueueFromContainer(final String[] trackIds, final String[] trackNames,
+                                       final String[] trackArtists, final String artUrlTemplate,
+                                       final int startIndex,
+                                       String containerId, String containerType) {
+        sourcePlaylistId     = null;
+        sourcePlaylistName   = null;
+        sourcePlaylistArtUrl = null;
+        sourceContainerId    = containerId;
+        sourceContainerType  = containerType;
+        playbackManager.clearStationMode();
+        startPlayQueueInternal(trackIds, trackNames, trackArtists, artUrlTemplate, startIndex);
+    }
+
+    /**
+     * Like {@link #playQueueFromPlaylist} but also stores container type for autoplay.
+     */
+    public void playQueueFromPlaylistWithContainer(final String[] trackIds, final String[] trackNames,
+                                                    final String[] trackArtists, final String artUrlTemplate,
+                                                    final int startIndex,
+                                                    String playlistId, String playlistName,
+                                                    String playlistArtUrl,
+                                                    String containerId, String containerType) {
+        sourcePlaylistId     = playlistId;
+        sourcePlaylistName   = playlistName;
+        sourcePlaylistArtUrl = playlistArtUrl;
+        sourceContainerId    = containerId;
+        sourceContainerType  = containerType;
+        playbackManager.clearStationMode();
         startPlayQueueInternal(trackIds, trackNames, trackArtists, artUrlTemplate, startIndex);
     }
 
@@ -680,6 +986,11 @@ public class AppleMusicMIDlet extends MIDlet {
                                         final String[] trackArtists, final String artUrlTemplate,
                                         final int startIndex) {
         display.setCurrent(nowPlayingScreen);
+        // Set up autoplay callback for when queue ends (non-station mode)
+        if (!playbackManager.isStationMode()) {
+            playbackManager.setAutoplayCallback(
+                makeAutoplayCallback(trackIds, sourceContainerId, sourceContainerType));
+        }
         new Thread(new Runnable() {
             public void run() {
                 try {

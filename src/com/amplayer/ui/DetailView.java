@@ -697,12 +697,16 @@ public class DetailView extends Canvas implements CommandListener {
         System.arraycopy(trackNames, 0, curNames, 0, trackCount);
         System.arraycopy(trackArtists, 0, curArtists, 0, trackCount);
 
+        String cType = isPlaylist ? "playlists" : "albums";
         if (isPlaylist) {
-            midlet.playQueueFromPlaylist(
+            midlet.playQueueFromPlaylistWithContainer(
                 curIds, curNames, curArtists, artUrlTemplate, selectedIndex,
-                id, name, artUrlTemplate);
+                id, name, artUrlTemplate,
+                id, cType);
         } else {
-            midlet.playQueue(curIds, curNames, curArtists, artUrlTemplate, selectedIndex);
+            midlet.playQueueFromContainer(
+                curIds, curNames, curArtists, artUrlTemplate, selectedIndex,
+                id, cType);
         }
 
         String pMode = Settings.performanceMode;

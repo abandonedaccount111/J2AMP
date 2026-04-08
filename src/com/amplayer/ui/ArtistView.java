@@ -61,12 +61,13 @@ public class ArtistView extends Canvas implements CommandListener {
     private static final Command CMD_SELECT       = new Command("Select",       Command.OK,   1);
     private static final Command CMD_PLAY_NEXT    = new Command("Play Next",    Command.ITEM, 2);
     private static final Command CMD_ADD_TO_QUEUE = new Command("Add to Queue", Command.ITEM, 3);
+    private static final Command CMD_PLAY_STATION = new Command("Play Station", Command.ITEM, 4);
 
     // -------------------------------------------------------------------------
     // Nokia soft-key menu
     // -------------------------------------------------------------------------
 
-    private static final String[] NOKIA_MENU_ITEMS = { "Select", "Play Next", "Add to Queue" };
+    private static final String[] NOKIA_MENU_ITEMS = { "Select", "Play Next", "Add to Queue", "Play Station" };
     private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
@@ -153,6 +154,7 @@ public class ArtistView extends Canvas implements CommandListener {
             addCommand(CMD_SELECT);
             addCommand(CMD_PLAY_NEXT);
             addCommand(CMD_ADD_TO_QUEUE);
+            addCommand(CMD_PLAY_STATION);
             setCommandListener(this);
             setFullScreenMode(false);
         } else {
@@ -532,6 +534,7 @@ public class ArtistView extends Canvas implements CommandListener {
             case 0: fireSelection();       break;
             case 1: queueSelected(true);   break;
             case 2: queueSelected(false);  break;
+            case 3: playArtistStation();   break;
         }
     }
 
@@ -683,6 +686,8 @@ public class ArtistView extends Canvas implements CommandListener {
             queueSelected(true);
         } else if (c == CMD_ADD_TO_QUEUE) {
             queueSelected(false);
+        } else if (c == CMD_PLAY_STATION) {
+            playArtistStation();
         }
     }
 
@@ -752,6 +757,31 @@ public class ArtistView extends Canvas implements CommandListener {
                 }
             }).start();
         }
+    }
+
+    /**
+     * Fetch the station for this artist and start station playback.
+     */
+    private void playArtistStation() {
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    JSONObject resp = api.getArtistStation(artistId);
+                    JSONArray data = resp.getArray("data", null);
+                    if (data == null || data.size() == 0) {
+                        System.out.println("No station found for artist " + artistId);
+                        return;
+                    }
+                    JSONObject station = data.getObject(0);
+                    String stationId = station.getString("id", "");
+                    JSONObject attrs = station.getObject("attributes", null);
+                    String stationName = (attrs != null) ? attrs.getString("name", artistName + " Station") : artistName + " Station";
+                    midlet.playStation(stationId, stationName);
+                } catch (Exception e) {
+                    System.out.println("Artist station error: " + e.getMessage());
+                }
+            }
+        }).start();
     }
 
     // -------------------------------------------------------------------------

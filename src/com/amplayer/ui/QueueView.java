@@ -43,14 +43,15 @@ public class QueueView extends Canvas
     // Commands  (used only on non-Nokia devices)
     // -------------------------------------------------------------------------
 
-    private static final Command CMD_BACK = new Command("Back", Command.BACK, 1);
-    private static final Command CMD_PLAY = new Command("Play", Command.OK,   1);
+    private static final Command CMD_BACK     = new Command("Back",     Command.BACK, 1);
+    private static final Command CMD_PLAY     = new Command("Play",     Command.OK,   1);
+    private static final Command CMD_AUTOPLAY = new Command("Autoplay", Command.ITEM, 2);
 
     // -------------------------------------------------------------------------
     // Nokia soft-key menu
     // -------------------------------------------------------------------------
 
-    private static final String[] NOKIA_MENU_ITEMS = { "Play" };
+    private String[] nokiaMenuItems;
     private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
@@ -98,9 +99,11 @@ public class QueueView extends Canvas
         ensureVisible(selectedIndex);
 
         isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
+        updateNokiaMenuItems();
         if (!isNokia) {
             addCommand(CMD_BACK);
             addCommand(CMD_PLAY);
+            addCommand(CMD_AUTOPLAY);
             setCommandListener(this);
                 setFullScreenMode(false);
         } else {
@@ -187,7 +190,7 @@ public class QueueView extends Canvas
                 if (action == UP && nokiaMenuSel > 0) {
                     nokiaMenuSel--;
                     repaint();
-                } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
+                } else if (action == DOWN && nokiaMenuSel < nokiaMenuItems.length - 1) {
                     nokiaMenuSel++;
                     repaint();
                 } else if (action == FIRE || keyCode == -5) {
@@ -222,6 +225,7 @@ public class QueueView extends Canvas
 
     private void executeNokiaMenuItem(int index) {
         if (index == 0) jumpToSelected(); // Play
+        else if (index == 1) toggleAutoplay(); // Autoplay
     }
 
     private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
@@ -248,7 +252,7 @@ public class QueueView extends Canvas
     private void drawNokiaMenu(Graphics g, int w, int h) {
         int itemH  = NAME_FONT.getHeight() + 6;
         int skH    = SUB_FONT.getHeight() + PAD * 2;
-        int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+        int menuH  = itemH * nokiaMenuItems.length + PAD * 2;
         int menuY  = h - skH - menuH;
 
         g.setColor(COLOR_HEADER);
@@ -256,7 +260,7 @@ public class QueueView extends Canvas
         g.setColor(COLOR_DIVIDER);
         g.drawLine(0, menuY, w, menuY);
 
-        for (int i = 0; i < NOKIA_MENU_ITEMS.length; i++) {
+        for (int i = 0; i < nokiaMenuItems.length; i++) {
             int y = menuY + PAD + i * itemH;
             if (i == nokiaMenuSel) {
                 g.setColor(COLOR_ACCENT);
@@ -266,7 +270,7 @@ public class QueueView extends Canvas
                 g.setColor(COLOR_TEXT1);
             }
             g.setFont(NAME_FONT);
-            g.drawString(NOKIA_MENU_ITEMS[i], PAD, y, Graphics.LEFT | Graphics.TOP);
+            g.drawString(nokiaMenuItems[i], PAD, y, Graphics.LEFT | Graphics.TOP);
         }
     }
 
@@ -289,7 +293,20 @@ public class QueueView extends Canvas
             display.setCurrent(backScreen);
         } else if (c == CMD_PLAY) {
             jumpToSelected();
+        } else if (c == CMD_AUTOPLAY) {
+            toggleAutoplay();
         }
+    }
+
+    private void toggleAutoplay() {
+        pm.toggleAutoplay();
+        updateNokiaMenuItems();
+        repaint();
+    }
+
+    private void updateNokiaMenuItems() {
+        String label = pm.isAutoplayEnabled() ? "Autoplay: ON" : "Autoplay: OFF";
+        nokiaMenuItems = new String[] { "Play", label };
     }
 
     // -------------------------------------------------------------------------
@@ -304,7 +321,7 @@ public class QueueView extends Canvas
         g.fillRect(0, 0, w, h);
 
         // Header
-        int hdrH = HDR_FONT.getHeight() + PAD * 2;
+        int hdrH = HDR_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2 + 2;
         g.setColor(COLOR_HEADER);
         g.fillRect(0, 0, w, hdrH);
         g.setColor(COLOR_DIVIDER);
@@ -317,7 +334,11 @@ public class QueueView extends Canvas
         int count = pm.getTrackCount();
         g.setFont(SUB_FONT);
         g.setColor(COLOR_TEXT2);
-        g.drawString(count + " tracks", w / 2, PAD + HDR_FONT.getHeight(),
+        String headerSub = count + " tracks";
+        if (pm.isAutoplayEnabled() && !pm.isStationMode()) {
+            headerSub += " \u00B7 Autoplay";
+        }
+        g.drawString(headerSub, w / 2, PAD + HDR_FONT.getHeight() + 2,
                      Graphics.HCENTER | Graphics.TOP);
 
         int listTop = hdrH + 1;

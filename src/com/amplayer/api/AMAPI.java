@@ -178,7 +178,36 @@ public class AMAPI {
       }).start();
     }
 
+    // -------------------------------------------------------------------------
+    // Station helpers
+    // -------------------------------------------------------------------------
 
+    /** Fetch the user's personal stations from the catalog. */
+    public JSONObject getPersonalStations() throws Exception {
+        Hashtable params = new Hashtable();
+        params.put("filter[identity]", "personal");
+        params.put("l", storefrontLanguage);
+        return APIRequest("/v1/catalog/" + storefront + "/stations", params, "GET", null, null);
+    }
 
-  
+    /** Fetch the next batch of tracks for a playing station (bodyless POST). */
+    public JSONObject getStationNextTracks(String stationId) throws Exception {
+        return APIRequest("/v1/me/stations/next-tracks/" + stationId, null, "POST", null, null);
+    }
+
+    /** Fetch the station associated with a given artist ID (uses ra.{artistId}). */
+    public JSONObject getArtistStation(String artistId) throws Exception {
+        Hashtable params = new Hashtable();
+        params.put("l", storefrontLanguage);
+        params.put("ids", "ra." + artistId);
+        return APIRequest("/v1/catalog/" + storefront + "/stations", params, "GET", null, null);
+    }
+
+    /**
+     * Request continuous autoplay tracks based on the current queue context.
+     * @param bodyJson JSON payload with data[] containing song IDs and container meta
+     */
+    public JSONObject getContinuousStation(String bodyJson) throws Exception {
+        return APIRequest("/v1/me/stations/continuous", null, "POST", bodyJson, null);
+    }
 }

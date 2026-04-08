@@ -74,6 +74,21 @@ public class PlaybackManager implements PlayerListener {
     private int repeatMode = REPEAT_NONE;
 
     // -------------------------------------------------------------------------
+    // Station mode — continuous radio playback
+    // -------------------------------------------------------------------------
+
+    private String   stationId             = null;
+    private Runnable stationQueueCallback  = null;
+    private int      lastStationFetchLength = -1;
+
+    // -------------------------------------------------------------------------
+    // Autoplay — continuous station when queue ends
+    // -------------------------------------------------------------------------
+
+    private Runnable autoplayCallback      = null;
+    private boolean  autoplayFired         = false;
+
+    // -------------------------------------------------------------------------
     // State
     // -------------------------------------------------------------------------
 
@@ -193,6 +208,23 @@ public class PlaybackManager implements PlayerListener {
         shuffledIndices = null;
     }
 
+    /**
+     * Append tracks to the queue. If the queue had finished gracefully
+     * and was waiting for these tracks (e.g. autoplay network delay), 
+     * playback will resume automatically.
+     */
+    public synchronized void appendToQueueAndResume(String[] ids, String[] names, String[] artists) {
+        int oldLength = trackIds != null ? trackIds.length : 0;
+        appendToQueue(ids, names, artists);
+        
+        // If we were waiting at the end of the old queue for these tracks
+        if (oldLength > 0 && currentIndex == oldLength - 1) {
+            if (!isPlaying && !isLoading && pausedTimeUs == -1L) {
+                play(oldLength);
+            }
+        }
+    }
+
     private static String[] insertArray(String[] base, String[] ins, int at) {
         String[] r = new String[base.length + ins.length];
         System.arraycopy(base, 0,   r, 0,                   at);
@@ -226,6 +258,7 @@ public class PlaybackManager implements PlayerListener {
         pausedTimeUs = -1L;
         stopPlayer();
         fireTrackChanged(index);
+        checkAutoQueue(true); // pre-fetch next station/autoplay batch if near end
 
         final String   id      = trackIds[index];
         final String[] idSnap  = trackIds;  // snapshot for preload after play starts
@@ -379,7 +412,10 @@ public class PlaybackManager implements PlayerListener {
 
     public void next() {
         if (trackIds == null) return;
-        if (shuffle && shuffledIndices != null) {
+        
+        checkAutoQueue(false); // Evaluate station/autoplay fetch (fallback for when preload is off)
+
+        if (shuffle && shuffledIndices != null && stationId == null) {
             if (shufflePos < shuffledIndices.length - 1) {
                 play(shuffledIndices[++shufflePos]);
             } else if (repeatMode == REPEAT_ALL) {
@@ -389,8 +425,35 @@ public class PlaybackManager implements PlayerListener {
         } else {
             if (currentIndex < trackIds.length - 1) {
                 play(currentIndex + 1);
-            } else if (repeatMode == REPEAT_ALL) {
+            } else if (repeatMode == REPEAT_ALL && stationId == null) {
                 play(0);
+            }
+        }
+    }
+
+    private void checkAutoQueue(boolean fromPlay) {
+        if (trackIds == null) return;
+        int remaining = trackIds.length - 1 - currentIndex;
+
+        if (fromPlay) {
+            // If called from play(), we only proactively fetch if preload is enabled
+            // AND we are at the 2nd last track (remaining == 1) or last track (remaining == 0).
+            if (!Settings.preloadEnabled || remaining > 1) return;
+        }
+
+        if (stationId != null && stationQueueCallback != null) {
+            // Station mode requests more tracks when remaining <= 1
+            if (remaining <= 1 && trackIds.length != lastStationFetchLength) {
+                lastStationFetchLength = trackIds.length;
+                stationQueueCallback.run();
+            }
+        } else if (stationId == null && Settings.autoplayEnabled && autoplayCallback != null && !autoplayFired) {
+            // Autoplay requests more tracks when the original queue ends.
+            // If preload is ON, we trigger at remaining <= 1 (2nd last song).
+            // If preload is OFF, we trigger at remaining <= 0 (last song finished).
+            if (fromPlay ? (remaining <= 1) : (remaining <= 0)) {
+                autoplayFired = true;
+                autoplayCallback.run();
             }
         }
     }
@@ -405,16 +468,63 @@ public class PlaybackManager implements PlayerListener {
     }
 
     public synchronized void toggleShuffle() {
+        if (stationId != null) return; // disabled in station mode
         shuffle = !shuffle;
         if (shuffle && trackIds != null) generateShuffle();
     }
 
     public synchronized void cycleRepeat() {
+        if (stationId != null) return; // disabled in station mode
         repeatMode = (repeatMode + 1) % 3;
     }
 
+    // -------------------------------------------------------------------------
+    // Station mode management
+    // -------------------------------------------------------------------------
+
+    /** Enter station mode. Disables shuffle/repeat and enables auto-queue. */
+    public synchronized void setStationMode(String stationId, Runnable queueCallback) {
+        this.stationId            = stationId;
+        this.stationQueueCallback = queueCallback;
+        this.shuffle              = false;
+        this.shuffledIndices      = null;
+        this.repeatMode           = REPEAT_NONE;
+    }
+
+    /** Leave station mode (e.g. when user plays from library). */
+    public synchronized void clearStationMode() {
+        this.stationId            = null;
+        this.stationQueueCallback = null;
+    }
+
+    public synchronized boolean isStationMode()  { return stationId != null; }
+    public synchronized String  getStationId()   { return stationId; }
+
+    // -------------------------------------------------------------------------
+    // Autoplay management
+    // -------------------------------------------------------------------------
+
+    /** Set a callback for queue autoplay (continuous station). Fires once when queue ends. */
+    public synchronized void setAutoplayCallback(Runnable cb) {
+        this.autoplayCallback = cb;
+        this.autoplayFired    = false;
+    }
+
+    public synchronized void clearAutoplayCallback() {
+        this.autoplayCallback = null;
+        this.autoplayFired    = false;
+    }
+
+    public synchronized void toggleAutoplay() {
+        Settings.autoplayEnabled = !Settings.autoplayEnabled;
+        Settings.save();
+    }
+
+    public synchronized boolean isAutoplayEnabled() { return Settings.autoplayEnabled; }
+
     public synchronized boolean isShuffled()  { return shuffle; }
     public synchronized int     getRepeatMode() { return repeatMode; }
+    public synchronized String[] getTrackIds()  { return trackIds; }
 
     private void generateShuffle() {
         int n = trackIds.length;

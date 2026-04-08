@@ -60,15 +60,16 @@ public class SettingsForm extends Canvas implements CommandListener {
     private static final int LR_PERF       = 2;
     private static final int LR_ART        = 3;
     private static final int LR_PRELOAD    = 4;
-    private static final int LR_LASTFM     = 5;
-    private static final int LR_LASTFM_NP  = 6;
-    private static final int LR_VISUALIZER = 7;
-    private static final int LR_CJK_RENDER = 8;
-    private static final int LR_DB_RELOAD  = 9;
-    private static final int LR_MAX_ITEM   = 10;
-    private static final int LR_MAX_QUEUE  = 11;
-    private static final int LR_FORCE_DB   = 12;
-    private static final int LR_BB_WIFI    = 13;
+    private static final int LR_AUTOPLAY   = 5;
+    private static final int LR_LASTFM     = 6;
+    private static final int LR_LASTFM_NP  = 7;
+    private static final int LR_VISUALIZER = 8;
+    private static final int LR_CJK_RENDER = 9;
+    private static final int LR_DB_RELOAD  = 10;
+    private static final int LR_MAX_ITEM   = 11;
+    private static final int LR_MAX_QUEUE  = 12;
+    private static final int LR_FORCE_DB   = 13;
+    private static final int LR_BB_WIFI    = 14;
 
     // -------------------------------------------------------------------------
     // Commands  (used only on non-Nokia devices)
@@ -129,31 +130,32 @@ public class SettingsForm extends Canvas implements CommandListener {
 
     /** Total number of visible rows. */
     private int rowCount() {
-        // Base: marquee, cache, perf, art, preload, lastfm, visualizer, cjk_render, db_reload, max_item, max_queue, force_db = 12
-        int count = signedIn() ? 13 : 12;
+        // Base: marquee, cache, perf, art, preload, autoplay, lastfm, visualizer, cjk_render, db_reload, max_item, max_queue, force_db = 13
+        int count = signedIn() ? 14 : 13;
         if (Settings.IS_BLACKBERRY) count++;
         return count;
     }
 
     /** Map a display-row index to a logical row constant. */
     private int logicalRow(int di) {
-        if (di <= LR_LASTFM) return di;
+        if (di <= LR_AUTOPLAY) return di;
+        if (di == 6) return LR_LASTFM;
         if (signedIn()) {
-            if (di == 6) return LR_LASTFM_NP;
-            if (di == 7) return LR_VISUALIZER;
-            if (di == 8) return LR_CJK_RENDER;
-            if (di == 9)  return LR_DB_RELOAD;
-            if (di == 10) return LR_MAX_ITEM;
-            if (di == 11) return LR_MAX_QUEUE;
-            if (di == 12) return LR_FORCE_DB;
+            if (di == 7) return LR_LASTFM_NP;
+            if (di == 8) return LR_VISUALIZER;
+            if (di == 9) return LR_CJK_RENDER;
+            if (di == 10) return LR_DB_RELOAD;
+            if (di == 11) return LR_MAX_ITEM;
+            if (di == 12) return LR_MAX_QUEUE;
+            if (di == 13) return LR_FORCE_DB;
             return LR_BB_WIFI;
         }
-        if (di == 6) return LR_VISUALIZER;
-        if (di == 7) return LR_CJK_RENDER;
-        if (di == 8)  return LR_DB_RELOAD;
-        if (di == 9)  return LR_MAX_ITEM;
-        if (di == 10) return LR_MAX_QUEUE;
-        if (di == 11) return LR_FORCE_DB;
+        if (di == 7) return LR_VISUALIZER;
+        if (di == 8) return LR_CJK_RENDER;
+        if (di == 9)  return LR_DB_RELOAD;
+        if (di == 10) return LR_MAX_ITEM;
+        if (di == 11) return LR_MAX_QUEUE;
+        if (di == 12) return LR_FORCE_DB;
         return LR_BB_WIFI;
     }
 
@@ -256,6 +258,7 @@ public class SettingsForm extends Canvas implements CommandListener {
             case LR_PERF:       return "Performance";
             case LR_ART:        return "Album Art";
             case LR_PRELOAD:    return "Preload";
+            case LR_AUTOPLAY:   return "Autoplay";
             case LR_LASTFM:     return "Last.fm";
             case LR_LASTFM_NP:  return "Now Playing Updates";
             case LR_VISUALIZER: return "Visualizer";
@@ -288,6 +291,10 @@ public class SettingsForm extends Canvas implements CommandListener {
                 return Settings.preloadEnabled
                     ? "Preload next/prev track: On"
                     : "Preload next/prev track: Off";
+            case LR_AUTOPLAY:
+                return Settings.autoplayEnabled
+                    ? "Queue autoplay: On"
+                    : "Queue autoplay: Off";
             case LR_LASTFM:
                 return (Settings.lastFmUser != null && Settings.lastFmUser.length() > 0)
                     ? "Signed in as " + Settings.lastFmUser
@@ -366,6 +373,11 @@ public class SettingsForm extends Canvas implements CommandListener {
                 break;
             case LR_PRELOAD:
                 Settings.preloadEnabled = !Settings.preloadEnabled;
+                Settings.save();
+                repaint();
+                break;
+            case LR_AUTOPLAY:
+                Settings.autoplayEnabled = !Settings.autoplayEnabled;
                 Settings.save();
                 repaint();
                 break;

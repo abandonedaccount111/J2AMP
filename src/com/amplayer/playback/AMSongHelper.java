@@ -49,6 +49,7 @@ public class AMSongHelper {
         String body = "{\"salableAdamId\":\"" + id + "\"}";
         String response = api.APIRequestString(endpoint, null, "POST", body, prefix);
         JSONObject json = JSON.getObject(response);
+        System.out.println("getWebPlaybackURLResponse: " + response);
         JSONObject data = json.getArray("songList").getObject(0);
         JSONArray assets = data.getArray("assets");
         // Find object with flavor = "32:ctrp64";

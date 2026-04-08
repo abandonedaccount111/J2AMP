@@ -26,6 +26,7 @@ import javax.microedition.media.Manager;
  *   Record 11 — dbReloadInterval    (int: 0, 1, 5, 10, -1) default 5
  *   Record 12 — maxItemSize         (int: 0=auto, 100, 500, 1000...) default 0
  *   Record 13 — maxQueueSize        (int: 0=auto, 100, 500, 1000...) default 0
+ *   Record 14 — autoplayEnabled     ("1" or "0", default "0")
  */
 public class Settings {
 
@@ -68,6 +69,7 @@ public class Settings {
     public static boolean preloadEnabled  = true;   // persisted as record 8
     public static boolean bbWifiEnabled    = false;  // persisted as record 9
     public static boolean cjkImageRender  = false;  // persisted as record 10
+    public static boolean autoplayEnabled = false;   // persisted as record 14
     public static int     queryLimit      = 100;    // derived-only
     public static String  audioContentType = getSupportedMp4ContentType(); // derived
     
@@ -219,6 +221,7 @@ public class Settings {
                 if (n2 >= 13) {
                     try { maxQueueSize = Integer.parseInt(readRec(rs2, 13).trim()); } catch (Exception e) {}
                 }
+                if (n2 >= 14) autoplayEnabled = "1".equals(readRec(rs2, 14));
             } catch (Exception ignored) {
             } finally {
                 closeQuietly(rs2);
@@ -245,6 +248,7 @@ public class Settings {
             writeRec(rs, String.valueOf(dbReloadInterval));
             writeRec(rs, String.valueOf(maxItemSize));
             writeRec(rs, String.valueOf(maxQueueSize));
+            writeRec(rs, autoplayEnabled ? "1" : "0");
         } catch (Exception ignored) {
         } finally {
             closeQuietly(rs);

@@ -2,6 +2,8 @@ package com.amplayer.midlets;
 
 import com.amplayer.playback.PlaybackManager;
 import com.amplayer.utils.Settings;
+import java.util.Calendar;
+import java.util.Date;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
@@ -14,10 +16,11 @@ public class MainMenu extends Canvas implements CommandListener {
 
     public static final int ITEM_NOW_PLAYING = 0;
     public static final int ITEM_SEARCH      = 1;
-    public static final int ITEM_SONGS       = 2;
-    public static final int ITEM_ALBUMS      = 3;
-    public static final int ITEM_PLAYLIST    = 4;
-    public static final int ITEM_SETTINGS    = 5;
+    public static final int ITEM_STATIONS    = 2;
+    public static final int ITEM_SONGS       = 3;
+    public static final int ITEM_ALBUMS      = 4;
+    public static final int ITEM_PLAYLIST    = 5;
+    public static final int ITEM_SETTINGS    = 6;
 
     // -------------------------------------------------------------------------
     // Colors — same palette as BaseList
@@ -34,14 +37,14 @@ public class MainMenu extends Canvas implements CommandListener {
     // Fonts & layout
     // -------------------------------------------------------------------------
 
-    private static final Font TITLE_FONT   = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD,  Font.SIZE_LARGE);
     private static final Font NAME_FONT    = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_BOLD,  Font.SIZE_MEDIUM);
     private static final Font SUBNAME_FONT = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_PLAIN, Font.SIZE_SMALL);
+    private static final Font STATUS_FONT  = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_PLAIN, Font.SIZE_SMALL);
 
-    private static final int PAD         = 8;
-    private static final int ACCENT_W    = 3;
-    private static final int TITLE_BAR_H = TITLE_FONT.getHeight() + PAD * 2;
-    private static final int ITEM_H      = NAME_FONT.getHeight() + SUBNAME_FONT.getHeight() + PAD * 2;
+    private static final int PAD          = 8;
+    private static final int ACCENT_W     = 3;
+    private static final int STATUS_BAR_H = STATUS_FONT.getHeight() + PAD;
+    private static final int ITEM_H       = NAME_FONT.getHeight() + SUBNAME_FONT.getHeight() + PAD * 2;
 
     // -------------------------------------------------------------------------
     // Menu items
@@ -50,6 +53,7 @@ public class MainMenu extends Canvas implements CommandListener {
     private static final String[] LABELS = {
         "Now Playing",
         "Search",
+        "Stations",
         "Songs",
         "Albums",
         "Playlists",
@@ -59,10 +63,11 @@ public class MainMenu extends Canvas implements CommandListener {
     private static final String[] SUBLABELS = {
         "Currently playing track",
         "Find music in catalog or library",
+        "Your personal stations",
         "Your library songs",
         "Your library albums",
         "Your playlists",
-        "Marquee, cache, Last.fm"
+        "Marquee, cache, Last.fm, Queue,.."
     };
 
     // -------------------------------------------------------------------------
@@ -71,6 +76,11 @@ public class MainMenu extends Canvas implements CommandListener {
 
     private int selectedIndex = 0;
     private int scrollOffset  = 0;   // first visible item index
+
+    // "Press back again to exit" state
+    private long    backPressedTime = 0;
+    private boolean showExitToast   = false;
+    private static final long EXIT_TIMEOUT = 3000; // 3 seconds
 
     // -------------------------------------------------------------------------
     // Commands  (used only on non-Nokia devices)
@@ -95,7 +105,6 @@ public class MainMenu extends Canvas implements CommandListener {
 
     public MainMenu(AppleMusicMIDlet midlet, Display display) {
         super();
-        setTitle("J2AMP");
         this.midlet  = midlet;
         this.display = display;
         isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
@@ -122,30 +131,78 @@ public class MainMenu extends Canvas implements CommandListener {
         int w     = getWidth();
         int h     = getHeight();
         int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
-        int listH = h - TITLE_BAR_H - skH;
+        int listTop = STATUS_BAR_H;
+        int listH   = h - STATUS_BAR_H - skH;
 
         // Background
         g.setColor(COLOR_BG);
         g.fillRect(0, 0, w, h);
 
-        // Title bar (drawn first, outside clip)
+        // ── Status bar (time + battery) ──────────────────────────
         g.setColor(0x111111);
-        g.fillRect(0, 0, w, TITLE_BAR_H);
-        g.setFont(TITLE_FONT);
-        g.setColor(COLOR_ACCENT);
-        g.drawString("J2AMP", PAD, PAD, Graphics.LEFT | Graphics.TOP);
-        g.setColor(COLOR_ACCENT);
-        g.fillRect(0, TITLE_BAR_H - 2, w, 2);
+        g.fillRect(0, 0, w, STATUS_BAR_H);
+        g.setFont(STATUS_FONT);
+        int stY = (STATUS_BAR_H - STATUS_FONT.getHeight()) / 2;
 
-        // Clip list area so items cannot overdraw the title bar
+        // Time HH:MM
+        g.setColor(COLOR_SUBNAME);
+        g.drawString(getCurrentTime(), PAD, stY, Graphics.LEFT | Graphics.TOP);
+
+        // Battery icon (right side)
+        int batLevel = getBatteryLevel();
+        if (batLevel >= 0) {
+            int batW = 22;   // body width (longer)
+            int batH = 10;    // body height (less wide)
+            int nubW = 2;
+            int batX = w - PAD - batW - nubW;
+            int batY = (STATUS_BAR_H - batH) / 2;
+
+            // Dark inner background (gives depth)
+            g.setColor(0x1A1A1A);
+            g.fillRect(batX + 1, batY + 1, batW - 2, batH - 2);
+
+            // Body outline
+            g.setColor(0x636366);
+            g.drawRect(batX, batY, batW - 1, batH - 1);
+
+            // Nub on right
+            int nubH = batH - 4;
+            if (nubH < 2) nubH = 2;
+            int nubY = batY + (batH - nubH) / 2;
+            g.setColor(0x636366);
+            g.fillRect(batX + batW, nubY, nubW, nubH);
+
+            // Fill proportional to level
+            int fillW = (batW - 4) * batLevel / 100;
+            if (fillW > 0) {
+                int fillColor;
+                int hlColor;  // highlight
+                if (batLevel > 50)       { fillColor = 0x30D158; hlColor = 0x5AE678; }
+                else if (batLevel > 20)  { fillColor = 0xFFD60A; hlColor = 0xFFE545; }
+                else                     { fillColor = 0xFF453A; hlColor = 0xFF6B61; }
+
+                // Main fill
+                g.setColor(fillColor);
+                g.fillRect(batX + 2, batY + 2, fillW, batH - 4);
+
+                // Top highlight (1px lighter stripe)
+                g.setColor(hlColor);
+                g.drawLine(batX + 2, batY + 2, batX + 2 + fillW - 1, batY + 2);
+            }
+        }
+
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, STATUS_BAR_H - 1, w, STATUS_BAR_H - 1);
+
+        // ── List area ────────────────────────────────────────────
         int cx = g.getClipX(), cy = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
-        g.setClip(0, TITLE_BAR_H, w, listH);
+        g.setClip(0, listTop, w, listH);
 
-        int visibleCount = listH / ITEM_H + 1; // +1 to fill partial item at bottom
+        int visibleCount = listH / ITEM_H + 1;
         int end = Math.min(LABELS.length, scrollOffset + visibleCount);
 
         for (int i = scrollOffset; i < end; i++) {
-            int y = TITLE_BAR_H + (i - scrollOffset) * ITEM_H;
+            int y = listTop + (i - scrollOffset) * ITEM_H;
 
             if (i == selectedIndex) {
                 g.setColor(COLOR_SELECTED);
@@ -175,19 +232,34 @@ public class MainMenu extends Canvas implements CommandListener {
         // Scroll indicator
         int totalH = LABELS.length * ITEM_H;
         if (totalH > listH) {
-            int full     = listH / ITEM_H; // fully visible items
+            int full     = listH / ITEM_H;
             int barH     = Math.max(8, listH * full / LABELS.length);
             int maxScroll = LABELS.length - full;
-            int barY     = TITLE_BAR_H + (maxScroll > 0
+            int barY     = listTop + (maxScroll > 0
                             ? (listH - barH) * scrollOffset / maxScroll : 0);
             g.setColor(0x3A3A3C);
-            g.fillRect(w - 3, TITLE_BAR_H, 3, listH);
+            g.fillRect(w - 3, listTop, 3, listH);
             g.setColor(COLOR_ACCENT);
             g.fillRect(w - 3, barY, 3, barH);
         }
 
         // Restore clip
         g.setClip(cx, cy, cw, ch);
+
+        // ── Exit toast ───────────────────────────────────────────
+        if (showExitToast) {
+            String msg = "Press back again to exit";
+            g.setFont(SUBNAME_FONT);
+            int tw = SUBNAME_FONT.stringWidth(msg) + PAD * 4;
+            int th = SUBNAME_FONT.getHeight() + PAD * 2;
+            int tx = (w - tw) / 2;
+            int ty = h - skH - th - PAD * 2;
+            g.setColor(0x333333);
+            g.fillRoundRect(tx, ty, tw, th, 8, 8);
+            g.setColor(COLOR_NAME);
+            g.drawString(msg, w / 2, ty + PAD, Graphics.HCENTER | Graphics.TOP);
+        }
+
         if (isNokia) drawSoftKeyBar(g, w, h, skH);
     }
 
@@ -210,10 +282,12 @@ public class MainMenu extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
+        // Clear exit toast on any non-back key
         if (isNokia) {
-            if (keyCode == -6) { fireSelection(); return; }
-            if (keyCode == -7) { midlet.notifyDestroyed(); return; }
+            if (keyCode == -6) { showExitToast = false; fireSelection(); return; }
+            if (keyCode == -7) { handleBack(); return; }
         }
+        showExitToast = false;
         int action = getGameAction(keyCode);
         if (action == UP) {
             if (selectedIndex > 0) {
@@ -225,7 +299,7 @@ public class MainMenu extends Canvas implements CommandListener {
             if (selectedIndex < LABELS.length - 1) {
                 selectedIndex++;
                 int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
-                int listH = getHeight() - TITLE_BAR_H - skH;
+                int listH = getHeight() - STATUS_BAR_H - skH;
                 int vis   = listH / ITEM_H;
                 if (selectedIndex >= scrollOffset + vis)
                     scrollOffset = selectedIndex - vis + 1;
@@ -244,6 +318,7 @@ public class MainMenu extends Canvas implements CommandListener {
         switch (selectedIndex) {
             case ITEM_NOW_PLAYING: midlet.showNowPlaying(); break;
             case ITEM_SEARCH:     midlet.showSearch();     break;
+            case ITEM_STATIONS:   midlet.showStations();   break;
             case ITEM_SONGS:      midlet.showSongs();      break;
             case ITEM_ALBUMS:     midlet.showAlbums();     break;
             case ITEM_PLAYLIST:   midlet.showPlaylist();   break;
@@ -257,9 +332,28 @@ public class MainMenu extends Canvas implements CommandListener {
 
     public void commandAction(Command c, Displayable d) {
         if (c == CMD_EXIT) {
-            midlet.notifyDestroyed();
+            handleBack();
         } else if (c == CMD_SELECT) {
             fireSelection();
+        }
+    }
+
+    private void handleBack() {
+        long now = System.currentTimeMillis();
+        if (showExitToast && (now - backPressedTime) < EXIT_TIMEOUT) {
+            midlet.notifyDestroyed();
+        } else {
+            backPressedTime = now;
+            showExitToast   = true;
+            repaint();
+            // Auto-hide toast after timeout
+            new Thread(new Runnable() {
+                public void run() {
+                    try { Thread.sleep(EXIT_TIMEOUT); } catch (InterruptedException e) {}
+                    showExitToast = false;
+                    repaint();
+                }
+            }).start();
         }
     }
 
@@ -282,5 +376,22 @@ public class MainMenu extends Canvas implements CommandListener {
         while (text.length() > 1 && font.stringWidth(text + "...") > maxW)
             text = text.substring(0, text.length() - 1);
         return text + "...";
+    }
+
+    private static String getCurrentTime() {
+        Calendar cal = Calendar.getInstance();
+        int hour = cal.get(Calendar.HOUR_OF_DAY);
+        int min  = cal.get(Calendar.MINUTE);
+        return (hour < 10 ? "0" : "") + hour + ":" + (min < 10 ? "0" : "") + min;
+    }
+
+    private static int getBatteryLevel() {
+        try {
+            String level = System.getProperty("com.nokia.mid.batterylevel");
+            if (level != null && level.length() > 0) {
+                return Integer.parseInt(level.trim());
+            }
+        } catch (Exception ignored) {}
+        return -1;
     }
 }
