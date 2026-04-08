@@ -82,7 +82,6 @@ public class SettingsForm extends Canvas implements CommandListener {
     // Nokia soft-key bar
     // -------------------------------------------------------------------------
 
-    private final boolean isNokia;
 
     // -------------------------------------------------------------------------
     // Dependencies
@@ -111,13 +110,7 @@ public class SettingsForm extends Canvas implements CommandListener {
         this.display    = display;
         this.backScreen = backScreen;
         this.pm         = pm;
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
         setFullScreenMode(true);
-        if (!isNokia) {
-            addCommand(CMD_BACK);
-            addCommand(CMD_SELECT);
-            setCommandListener(this);
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -180,7 +173,7 @@ public class SettingsForm extends Canvas implements CommandListener {
         g.setColor(COLOR_ACCENT);
         g.fillRect(0, HDR_H - 2, w, 2);
 
-        int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUB_FONT.getHeight() + PAD * 2;
         int listH = h - HDR_H - skH;
         int cx = g.getClipX(), cy2 = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
         g.setClip(0, HDR_H, w, listH);
@@ -230,7 +223,7 @@ public class SettingsForm extends Canvas implements CommandListener {
         }
 
         g.setClip(cx, cy2, cw, ch);
-        if (isNokia) drawSoftKeyBar(g, w, h, skH);
+        drawSoftKeyBar(g, w, h, skH);
     }
 
     private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
@@ -349,7 +342,7 @@ public class SettingsForm extends Canvas implements CommandListener {
             int deltaItems = (startY_T - y) / ITEM_H;
             int newOffset = startOffset_T + deltaItems;
 
-            int listH = getHeight() - HDR_H - (isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0);
+            int listH = getHeight() - HDR_H - (SUB_FONT.getHeight() + PAD * 2);
             int visible = listH / ITEM_H;
             if (visible < 1) visible = 1;
             int total = rowCount();
@@ -369,11 +362,11 @@ public class SettingsForm extends Canvas implements CommandListener {
 
     protected void pointerReleased(int x, int y) {
         if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
-            int skH = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int skH = SUB_FONT.getHeight() + PAD * 2;
             int h = getHeight();
             int w = getWidth();
 
-            if (isNokia && y > h - skH) {
+            if (y > h - skH) {
                 if (x > w / 2) display.setCurrent(backScreen);
                 else activate(logicalRow(selectedIndex));
                 return;
@@ -396,10 +389,8 @@ public class SettingsForm extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) { activate(logicalRow(selectedIndex)); return; }
-            if (keyCode == -7) { display.setCurrent(backScreen); return; }
-        }
+        if (keyCode == -6) { activate(logicalRow(selectedIndex)); return; }
+        if (keyCode == -7) { display.setCurrent(backScreen); return; }
         int action = getGameAction(keyCode);
         int total  = rowCount();
         if (action == UP) {
@@ -661,7 +652,7 @@ public class SettingsForm extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     private void ensureVisible() {
-        int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUB_FONT.getHeight() + PAD * 2;
         int listH = getHeight() - HDR_H - skH;
         int vis   = listH / ITEM_H;
         if (vis < 1) vis = 1;

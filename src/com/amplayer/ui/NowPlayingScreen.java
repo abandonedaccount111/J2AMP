@@ -125,9 +125,11 @@ public class NowPlayingScreen extends Canvas
         "Lyrics", "Queue", "Shuffle", "Repeat",
         "Go to Artist", "Go to Album", "Go to Playlist", "Visualizer"
     };
-    private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
+
+    // ── Touch ──────────────────────────────────────────────────────────────
+    private long pressTime_T = 0;
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -142,28 +144,7 @@ public class NowPlayingScreen extends Canvas
         this.midlet     = midlet;
 
         pm.setListener(this);
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
-
-        
-
-        if (!isNokia) {
-                addCommand(CMD_BACK);
-                addCommand(CMD_PREV);
-                addCommand(CMD_NEXT);
-                addCommand(CMD_LYRICS);
-                addCommand(CMD_QUEUE);
-                addCommand(CMD_SHUFFLE);
-                addCommand(CMD_REPEAT);
-                addCommand(CMD_GO_TO_ARTIST);
-                addCommand(CMD_GO_TO_ALBUM);
-                addCommand(CMD_GO_TO_PLAYLIST);
-                addCommand(CMD_VISUALIZER);
-                setCommandListener(this);
-                setFullScreenMode(false);
-        } else {
-                setFullScreenMode(true);
-        }
-
+        setFullScreenMode(true);
 
         trackName    = pm.getCurrentName();
         trackArtist  = pm.getCurrentArtist();
@@ -402,8 +383,8 @@ public class NowPlayingScreen extends Canvas
         g.setColor(COLOR_BG);
         g.fillRect(0, 0, w, h);
 
-        // Soft-key label bar (Nokia only) — reserve space at very bottom
-        int skH   = isNokia ? SMALL_FONT.getHeight() + PAD * 2 : 0;
+        // Soft-key label bar — reserve space at very bottom
+        int skH   = SMALL_FONT.getHeight() + PAD * 2;
 
         // Controls bar at bottom (same for both layouts)
         int ctrlH  = NAME_FONT.getHeight() + PAD * 3;
@@ -524,8 +505,8 @@ public class NowPlayingScreen extends Canvas
             drawProgressBar(g, barX, barY, barW, barH, pos, dur);
         }
 
-        if (isNokia) drawSoftKeyBar(g, w, h, skH);
-        if (isNokia && nokiaMenuOpen) drawNokiaMenu(g, w, h);
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h);
     }
 
     private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
@@ -638,49 +619,47 @@ public class NowPlayingScreen extends Canvas
     private static final long SEEK_STEP_MS = 10000L; // 10 s per repeated key event
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                } else {
-                    nokiaMenuOpen = true;
-                    nokiaMenuSel  = 0;
-                }
-                repaint();
-                return;
-            }
-            if (keyCode == -7) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    repaint();
-                } else {
-                    stopProgressTimer();
-                    display.setCurrent(backScreen);
-                }
-                return;
-            }
+        if (keyCode == -6) {
             if (nokiaMenuOpen) {
-                System.out.println("Nokia menu key event: " + keyCode);
-                int action = getGameAction(keyCode);
-                if (action == UP && nokiaMenuSel > 0) {
-                    nokiaMenuSel--;
-                    repaint();
-                } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
-                    nokiaMenuSel++;
-                    repaint();
-                } else if (action == FIRE || keyCode == -5) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                    repaint();
-                }
-                return;
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+            } else {
+                nokiaMenuOpen = true;
+                nokiaMenuSel  = 0;
             }
-            if (keyCode == -5) {
-                if (pm.isPlaying()) pm.pause(); else pm.resume();
+            repaint();
+            return;
+        }
+        if (keyCode == -7) {
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
                 repaint();
-                return;
+            } else {
+                stopProgressTimer();
+                display.setCurrent(backScreen);
             }
+            return;
+        }
+        if (nokiaMenuOpen) {
+            System.out.println("Nokia menu key event: " + keyCode);
+            int action = getGameAction(keyCode);
+            if (action == UP && nokiaMenuSel > 0) {
+                nokiaMenuSel--;
+                repaint();
+            } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
+                nokiaMenuSel++;
+                repaint();
+            } else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+                repaint();
+            }
+            return;
+        }
+        if (keyCode == -5) {
+            if (pm.isPlaying()) pm.pause(); else pm.resume();
+            repaint();
+            return;
         }
         int action = getGameAction(keyCode);
         switch (action) {
@@ -696,11 +675,96 @@ public class NowPlayingScreen extends Canvas
                 return;
         }
         // Number-key shortcuts
-        switch (keyCode) {
-            case KEY_NUM4: pm.previous();                                      break;
-            case KEY_NUM5: if (pm.isPlaying()) pm.pause(); else pm.resume();
-                           repaint();                                          break;
-            case KEY_NUM6: pm.next();                                          break;
+    }
+    
+
+    // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    protected void pointerPressed(int x, int y) {
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if ((System.currentTimeMillis() - pressTime_T) < 500) {
+            int w = getWidth();
+            int h = getHeight();
+            int skH = SMALL_FONT.getHeight() + PAD * 2;
+            
+            // Nokia Menu
+            if (nokiaMenuOpen) {
+                int itemH  = SMALL_FONT.getHeight() + 6;
+                int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+                int menuY  = h - skH - menuH;
+                if (y >= menuY && y <= menuY + menuH) {
+                    int clickedIdx = (y - menuY - PAD) / itemH;
+                    if (clickedIdx >= 0 && clickedIdx < NOKIA_MENU_ITEMS.length) {
+                        nokiaMenuOpen = false;
+                        executeNokiaMenuItem(clickedIdx);
+                        repaint();
+                    }
+                } else if (y > h - skH) {
+                    if (x > w / 2) { nokiaMenuOpen = false; repaint(); }
+                    else { nokiaMenuOpen = false; executeNokiaMenuItem(nokiaMenuSel); repaint(); }
+                } else {
+                    nokiaMenuOpen = false; repaint();
+                }
+                return;
+            }
+
+            // Nokia Softkeys
+            if (y > h - skH) {
+                if (x > w / 2) {
+                    stopProgressTimer();
+                    display.setCurrent(backScreen);
+                } else {
+                    nokiaMenuOpen = true; nokiaMenuSel = 0; repaint();
+                }
+                return;
+            }
+
+            // Playback Controls
+            int ctrlH  = NAME_FONT.getHeight() + PAD * 3;
+            int ctrlY  = h - ctrlH - skH;
+            if (y >= ctrlY && y <= ctrlY + ctrlH) {
+                int fifthW = w / 5;
+                int btnIdx = x / fifthW;
+                switch (btnIdx) {
+                    case 0: pm.toggleShuffle(); break;
+                    case 1: pm.previous();      break;
+                    case 2: if (pm.isPlaying()) pm.pause(); else pm.resume(); break;
+                    case 3: pm.next();          break;
+                    case 4: pm.cycleRepeat();   break;
+                }
+                repaint();
+                return;
+            }
+
+            // Progress Bar Seeking
+            int barH = 4;
+            int timeH = SMALL_FONT.getHeight() + 4;
+            int barY = ctrlY - PAD - barH - timeH;
+            if (y >= barY - 10 && y <= barY + barH + 10) {
+                int barX, barW;
+                if (w > h) { // Landscape
+                    int artPaneW = w * 35 / 100;
+                    barX = artPaneW + PAD;
+                    barW = w - artPaneW - PAD * 2;
+                } else { // Portrait
+                    barX = PAD * 2;
+                    barW = w - PAD * 4;
+                }
+                if (x >= barX && x <= barX + barW) {
+                    long dur = pm.getDurationMs();
+                    if (dur > 0) {
+                        long target = (long)(x - barX) * dur / barW;
+                        pm.seekTo(target);
+                        repaint();
+                    }
+                }
+                return;
+            }
         }
     }
 

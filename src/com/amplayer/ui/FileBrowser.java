@@ -1,5 +1,6 @@
 package com.amplayer.ui;
 
+import com.amplayer.utils.Settings;
 import java.util.Enumeration;
 import java.util.Vector;
 import javax.microedition.io.Connector;
@@ -68,12 +69,21 @@ public class FileBrowser extends Canvas implements CommandListener {
     private final Display  display;
     private final Listener listener;
 
+    private boolean nokiaMenuOpen = false;
+    private int     nokiaMenuSel  = 0;
+
     /** Current directory URL (e.g. "file:///E:/tokens/"), null = root listing. */
     private String currentPath  = null;
     private Vector entries      = new Vector();   // String: name; dirs end with "/"
     private int    selectedIdx  = 0;
     private int    scrollOffset = 0;
     private String loadError    = null;
+
+    // ── Touch ──────────────────────────────────────────────────────────────
+    private int  startY_T      = -1;
+    private int  startOffset_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T   = 0;
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -84,9 +94,6 @@ public class FileBrowser extends Canvas implements CommandListener {
         this.listener = listener;
 
         setFullScreenMode(true);
-        addCommand(CMD_BACK);
-        addCommand(CMD_SELECT);
-        setCommandListener(this);
 
         loadDir(null);
     }
@@ -210,6 +217,41 @@ public class FileBrowser extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
+        if (keyCode == -6) { // Options
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+            } else {
+                nokiaMenuOpen = true;
+                nokiaMenuSel  = 0;
+            }
+            repaint();
+            return;
+        }
+        if (keyCode == -7) { // Back
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
+                repaint();
+            } else {
+                goUp();
+            }
+            return;
+        }
+        if (nokiaMenuOpen) {
+            int action = getGameAction(keyCode);
+            if (action == UP && nokiaMenuSel > 0) {
+                nokiaMenuSel--;
+                repaint();
+            } else if (action == DOWN && nokiaMenuSel < 1) { // Only "Select" in nokia menu for now
+                nokiaMenuSel++;
+                repaint();
+            } else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+                repaint();
+            }
+            return;
+        }
         int n      = entries.size();
         int action = getGameAction(keyCode);
         if (action == UP && selectedIdx > 0) {
@@ -220,8 +262,91 @@ public class FileBrowser extends Canvas implements CommandListener {
             selectedIdx++;
             ensureVisible();
             repaint();
-        } else if (action == FIRE) {
+        } else if (action == FIRE || keyCode == -5) {
             selectCurrent();
+        }
+    }
+
+    private void executeNokiaMenuItem(int index) {
+        if (index == 0) selectCurrent();
+    }
+
+    // -------------------------------------------------------------------------
+    // Touch events
+    // -------------------------------------------------------------------------
+
+    protected void pointerPressed(int x, int y) {
+        startY_T = y;
+        startOffset_T = scrollOffset;
+        isDragging_T = false;
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (nokiaMenuOpen) return;
+        int itemH = ITEM_FONT.getHeight() + PAD;
+        if (itemH <= 0) return;
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            int deltaIdx = (startY_T - y) / itemH;
+            int newScroll = startOffset_T + deltaIdx;
+            
+            int hdrH = HDR_FONT.getHeight() + PATH_FONT.getHeight() + PAD * 3;
+            int h = getHeight();
+            int skH = ITEM_FONT.getHeight() + PAD * 2;
+            int listH = h - hdrH - skH;
+            int visible = listH / itemH;
+            int maxScroll = Math.max(0, entries.size() - visible);
+            
+            if (newScroll < 0) newScroll = 0;
+            if (newScroll > maxScroll) newScroll = maxScroll;
+            
+            if (scrollOffset != newScroll) {
+                scrollOffset = newScroll;
+                repaint();
+            }
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int h = getHeight();
+            int w = getWidth();
+            int hdrH = HDR_FONT.getHeight() + PATH_FONT.getHeight() + PAD * 3;
+            int skH = ITEM_FONT.getHeight() + PAD * 2;
+
+            if (nokiaMenuOpen) {
+                int itemH = ITEM_FONT.getHeight() + 6;
+                int menuH = itemH * 1 + PAD * 2; // only "Select"
+                int menuY = h - skH - menuH;
+                if (y >= menuY && y <= menuY + menuH) {
+                    nokiaMenuOpen = false;
+                    executeNokiaMenuItem(0);
+                    repaint();
+                } else if (y > h - skH) {
+                    if (x > w / 2) { nokiaMenuOpen = false; repaint(); }
+                    else { nokiaMenuOpen = false; executeNokiaMenuItem(0); repaint(); }
+                } else {
+                    nokiaMenuOpen = false; repaint();
+                }
+                return;
+            }
+
+            if (y > h - skH) {
+                if (x > w / 2) goUp();
+                else { nokiaMenuOpen = true; nokiaMenuSel = 0; repaint(); }
+                return;
+            }
+
+            if (y >= hdrH && y < h - skH) {
+                int itemH = ITEM_FONT.getHeight() + PAD;
+                int clickedIdx = scrollOffset + (y - hdrH) / itemH;
+                if (clickedIdx >= 0 && clickedIdx < entries.size()) {
+                    selectedIdx = clickedIdx;
+                    repaint();
+                    selectCurrent();
+                }
+            }
         }
     }
 
@@ -244,11 +369,13 @@ public class FileBrowser extends Canvas implements CommandListener {
         int w = getWidth();
         int h = getHeight();
 
+        // Header
+        int hdrH = HDR_FONT.getHeight() + PATH_FONT.getHeight() + PAD * 3;
+        int skH  = ITEM_FONT.getHeight() + PAD * 2;
+        
         g.setColor(COLOR_BG);
         g.fillRect(0, 0, w, h);
 
-        // Header
-        int hdrH = HDR_FONT.getHeight() + PATH_FONT.getHeight() + PAD * 3;
         g.setColor(COLOR_HEADER);
         g.fillRect(0, 0, w, hdrH);
         g.setColor(COLOR_DIVIDER);
@@ -321,6 +448,52 @@ public class FileBrowser extends Canvas implements CommandListener {
         }
 
         g.setClip(cx, cy, cw, ch);
+
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(COLOR_HEADER);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(PATH_FONT);
+        int labelY = barY + (skH - PATH_FONT.getHeight()) / 2;
+        if (nokiaMenuOpen) {
+            g.setColor(COLOR_TEXT1);
+            g.drawString("Select", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_TEXT2);
+            g.drawString("Close", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        } else {
+            g.setColor(COLOR_TEXT1);
+            g.drawString("Options", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+            g.setColor(COLOR_TEXT2);
+            g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
+        }
+    }
+
+    private void drawNokiaMenu(Graphics g, int w, int h, int skH) {
+        int itemH = ITEM_FONT.getHeight() + 6;
+        int menuH = itemH * 1 + PAD * 2;
+        int menuY = h - skH - menuH;
+
+        g.setColor(COLOR_HEADER);
+        g.fillRect(0, menuY, w, menuH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, menuY, w, menuY);
+
+        int y = menuY + PAD;
+        if (nokiaMenuSel == 0) {
+            g.setColor(COLOR_ACCENT);
+            g.fillRect(0, y - 2, w, itemH);
+            g.setColor(COLOR_BG);
+        } else {
+            g.setColor(COLOR_TEXT1);
+        }
+        g.setFont(PATH_FONT);
+        g.drawString("Select", PAD, y, Graphics.LEFT | Graphics.TOP);
     }
 
     // -------------------------------------------------------------------------

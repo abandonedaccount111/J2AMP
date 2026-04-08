@@ -75,7 +75,6 @@ public class DetailView extends Canvas implements CommandListener {
     // Nokia soft-key menu
     // -------------------------------------------------------------------------
 
-    private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
     // Built in constructor based on isPlaylist
@@ -158,24 +157,12 @@ public class DetailView extends Canvas implements CommandListener {
         this.backScreen     = backScreen;
         this.midlet         = midlet;
 
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
         if (isPlaylist) {
             nokiaMenuItems = new String[]{ "Play", "Go to Artist", "Go to Album", "Play Next", "Add to Queue" };
         } else {
             nokiaMenuItems = new String[]{ "Play", "Go to Artist", "Play Next", "Add to Queue" };
         }
-        if (!isNokia) {
-            addCommand(CMD_BACK);
-            addCommand(CMD_PLAY);
-            addCommand(CMD_GO_TO_ARTIST);
-            if (isPlaylist) addCommand(CMD_GO_TO_ALBUM);
-            addCommand(CMD_PLAY_NEXT);
-            addCommand(CMD_ADD_TO_QUEUE);
-            setCommandListener(this);
-            setFullScreenMode(false);
-        } else {
-            setFullScreenMode(true);
-        } 
+        setFullScreenMode(true);
 
         loadTracks();
     }
@@ -426,7 +413,7 @@ public class DetailView extends Canvas implements CommandListener {
         int h     = getHeight();
         int artH  = h / 3;
         int listY = artH + 2;
-        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
         int listH = h - listY - skH;
 
         // Full background in bgColor
@@ -451,7 +438,8 @@ public class DetailView extends Canvas implements CommandListener {
         } else {
             paintTrackList(g, w, listY, listH);
         }
-        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h);
     }
 
     private void paintArtSection(Graphics g, int w, int artH) {
@@ -650,7 +638,7 @@ public class DetailView extends Canvas implements CommandListener {
             int hdY  = PAD + ((h > PAD * 4) ? h / 3 : 100) + PAD;
             int hdH  = HEADER_FONT.getHeight() + PAD + NAME_FONT.getHeight() + PAD;
             int listY = hdY + hdH;
-            int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
             int listH = h - listY - skH;
 
             int visible = listH / itemH;
@@ -672,7 +660,7 @@ public class DetailView extends Canvas implements CommandListener {
 
     protected void pointerReleased(int x, int y) {
         if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
-            int skH = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int skH = SUBNAME_FONT.getHeight() + PAD * 2;
             int h = getHeight();
             int w = getWidth();
 
@@ -699,7 +687,8 @@ public class DetailView extends Canvas implements CommandListener {
                 return;
             }
 
-            if (isNokia && y > h - skH) {
+
+            if (y > h - skH) {
                 if (x > w / 2) {
                     display.setCurrent(backScreen);
                 } else {
@@ -728,42 +717,40 @@ public class DetailView extends Canvas implements CommandListener {
     }
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                } else {
-                    nokiaMenuOpen = true;
-                    nokiaMenuSel  = 0;
-                }
-                repaint();
-                return;
-            }
-            if (keyCode == -7) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    repaint();
-                } else {
-                    display.setCurrent(backScreen);
-                }
-                return;
-            }
+        if (keyCode == -6) {
             if (nokiaMenuOpen) {
-                int action = getGameAction(keyCode);
-                if (action == UP && nokiaMenuSel > 0) {
-                    nokiaMenuSel--;
-                    repaint();
-                } else if (action == DOWN && nokiaMenuSel < nokiaMenuItems.length - 1) {
-                    nokiaMenuSel++;
-                    repaint();
-                } else if (action == FIRE || keyCode == -5) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                    repaint();
-                }
-                return;
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+            } else {
+                nokiaMenuOpen = true;
+                nokiaMenuSel  = 0;
             }
+            repaint();
+            return;
+        }
+        if (keyCode == -7) {
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
+                repaint();
+            } else {
+                display.setCurrent(backScreen);
+            }
+            return;
+        }
+        if (nokiaMenuOpen) {
+            int action = getGameAction(keyCode);
+            if (action == UP && nokiaMenuSel > 0) {
+                nokiaMenuSel--;
+                repaint();
+            } else if (action == DOWN && nokiaMenuSel < nokiaMenuItems.length - 1) {
+                nokiaMenuSel++;
+                repaint();
+            } else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+                repaint();
+            }
+            return;
         }
         if (!tracksLoaded || trackCount == 0) return;
         int action = getGameAction(keyCode);
@@ -778,7 +765,7 @@ public class DetailView extends Canvas implements CommandListener {
             if (selectedIndex < trackCount - 1) {
                 selectedIndex++;
                 mqReset();
-                int listH   = getHeight() - getHeight() / 3 - 2 - (isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0);
+                int listH   = getHeight() - getHeight() / 3 - 2 - (SUBNAME_FONT.getHeight() + PAD * 2);
                 int visible = listH / trackItemH() + 1;
                 if (selectedIndex >= scrollOffset + visible)
                     scrollOffset = selectedIndex - visible + 1;

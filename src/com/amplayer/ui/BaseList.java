@@ -111,7 +111,6 @@ public class BaseList extends Canvas implements CommandListener {
     // Nokia soft-key menu
     // -------------------------------------------------------------------------
 
-    private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
     /** Ordered context items for nokia menu: each element is String[]{label, tag}. */
@@ -126,15 +125,7 @@ public class BaseList extends Canvas implements CommandListener {
         setTitle(title);
         this.listener = listener;
         loadItems(items);
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
-        if (!isNokia) {
-            addCommand(CMD_SELECT);
-            addCommand(CMD_BACK);
-            setCommandListener(this);
-            setFullScreenMode(false);
-        } else {
-            setFullScreenMode(true);
-        }
+        setFullScreenMode(true);
     }
 
     // -------------------------------------------------------------------------
@@ -180,7 +171,7 @@ public class BaseList extends Canvas implements CommandListener {
     protected void paint(Graphics g) {
         int w     = getWidth();
         int h     = getHeight();
-        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
         int listH = h - TITLE_BAR_H - skH;
 
         // Background
@@ -284,7 +275,8 @@ public class BaseList extends Canvas implements CommandListener {
 
         // Restore clip
         g.setClip(cx, cy, cw, ch);
-        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
     }
 
     // -------------------------------------------------------------------------
@@ -309,7 +301,7 @@ public class BaseList extends Canvas implements CommandListener {
             isDragging_T = true;
             int newScroll = startOffset_T + (startY_T - y);
             
-            int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
             int listH = getHeight() - TITLE_BAR_H - skH;
             int totalH = itemYPos[count];
             int maxScroll = Math.max(0, totalH - listH);
@@ -326,7 +318,7 @@ public class BaseList extends Canvas implements CommandListener {
 
     protected void pointerReleased(int x, int y) {
         if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
-            int skH = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int skH = SUBNAME_FONT.getHeight() + PAD * 2;
             int h = getHeight();
             int w = getWidth();
 
@@ -353,7 +345,7 @@ public class BaseList extends Canvas implements CommandListener {
                 return;
             }
 
-            if (isNokia && y > h - skH) {
+            if (y > h - skH) {
                 if (x > w / 2) {
                     if (backAction != null) backAction.run();
                 } else {
@@ -383,43 +375,41 @@ public class BaseList extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                } else {
-                    nokiaMenuOpen = true;
-                    nokiaMenuSel  = 0;
-                }
-                repaint();
-                return;
-            }
-            if (keyCode == -7) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    repaint();
-                } else if (backAction != null) {
-                    backAction.run();
-                }
-                return;
-            }
+        if (keyCode == -6) {
             if (nokiaMenuOpen) {
-                int menuSize = 1 + nokiaContextItems.size();
-                int action = getGameAction(keyCode);
-                if (action == UP && nokiaMenuSel > 0) {
-                    nokiaMenuSel--;
-                    repaint();
-                } else if (action == DOWN && nokiaMenuSel < menuSize - 1) {
-                    nokiaMenuSel++;
-                    repaint();
-                } else if (action == FIRE || keyCode == -5) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                    repaint();
-                }
-                return;
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+            } else {
+                nokiaMenuOpen = true;
+                nokiaMenuSel  = 0;
             }
+            repaint();
+            return;
+        }
+        if (keyCode == -7) {
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
+                repaint();
+            } else if (backAction != null) {
+                backAction.run();
+            }
+            return;
+        }
+        if (nokiaMenuOpen) {
+            int menuSize = 1 + nokiaContextItems.size();
+            int action = getGameAction(keyCode);
+            if (action == UP && nokiaMenuSel > 0) {
+                nokiaMenuSel--;
+                repaint();
+            } else if (action == DOWN && nokiaMenuSel < menuSize - 1) {
+                nokiaMenuSel++;
+                repaint();
+            } else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+                repaint();
+            }
+            return;
         }
         int action = getGameAction(keyCode);
         if      (action == UP)   moveUp();
@@ -555,7 +545,7 @@ public class BaseList extends Canvas implements CommandListener {
 
     /** Scroll so selectedIndex is fully in view. */
     private void ensureVisible() {
-        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
         int listH = getHeight() - TITLE_BAR_H - skH;
         int absY  = itemYPos[selectedIndex];
         int ih    = itemHeights[selectedIndex];
@@ -605,12 +595,7 @@ public class BaseList extends Canvas implements CommandListener {
      * currently selected item.
      */
     public void addContextCommand(Command cmd, String actionTag) {
-        if (isNokia) {
-            nokiaContextItems.addElement(new String[]{ cmd.getLabel(), actionTag });
-        } else {
-            contextCommandMap.put(cmd, actionTag);
-            addCommand(cmd);
-        }
+        nokiaContextItems.addElement(new String[]{ cmd.getLabel(), actionTag });
     }
 
     private static String clip(String text, Font font, int maxW) {

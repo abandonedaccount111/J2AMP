@@ -47,12 +47,7 @@ public class QueueView extends Canvas
     private static final Command CMD_PLAY     = new Command("Play",     Command.OK,   1);
     private static final Command CMD_AUTOPLAY = new Command("Autoplay", Command.ITEM, 2);
 
-    // -------------------------------------------------------------------------
-    // Nokia soft-key menu
-    // -------------------------------------------------------------------------
-
     private String[] nokiaMenuItems;
-    private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
 
@@ -98,17 +93,8 @@ public class QueueView extends Canvas
         scrollOffset  = 0;
         ensureVisible(selectedIndex);
 
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
         updateNokiaMenuItems();
-        if (!isNokia) {
-            addCommand(CMD_BACK);
-            addCommand(CMD_PLAY);
-            addCommand(CMD_AUTOPLAY);
-            setCommandListener(this);
-                setFullScreenMode(false);
-        } else {
-                setFullScreenMode(true);
-        }
+        setFullScreenMode(true);
     }
 
     // -------------------------------------------------------------------------
@@ -188,7 +174,7 @@ public class QueueView extends Canvas
 
             int hdrH = HDR_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2 + 2;
             int listTop = hdrH + 1;
-            int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int skH   = SUB_FONT.getHeight() + PAD * 2;
             int listH = getHeight() - listTop - skH;
 
             int visible = listH / itemH;
@@ -210,7 +196,7 @@ public class QueueView extends Canvas
 
     protected void pointerReleased(int x, int y) {
         if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
-            int skH = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int skH = SUB_FONT.getHeight() + PAD * 2;
             int h = getHeight();
             int w = getWidth();
 
@@ -237,7 +223,7 @@ public class QueueView extends Canvas
                 return;
             }
 
-            if (isNokia && y > h - skH) {
+            if (y > h - skH) {
                 if (x > w / 2) {
                     pm.setListener(prevListener);
                     display.setCurrent(backScreen);
@@ -265,43 +251,41 @@ public class QueueView extends Canvas
     }
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                } else {
-                    nokiaMenuOpen = true;
-                    nokiaMenuSel  = 0;
-                }
-                repaint();
-                return;
-            }
-            if (keyCode == -7) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    repaint();
-                } else {
-                    pm.setListener(prevListener);
-                    display.setCurrent(backScreen);
-                }
-                return;
-            }
+        if (keyCode == -6) {
             if (nokiaMenuOpen) {
-                int action = getGameAction(keyCode);
-                if (action == UP && nokiaMenuSel > 0) {
-                    nokiaMenuSel--;
-                    repaint();
-                } else if (action == DOWN && nokiaMenuSel < nokiaMenuItems.length - 1) {
-                    nokiaMenuSel++;
-                    repaint();
-                } else if (action == FIRE || keyCode == -5) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                    repaint();
-                }
-                return;
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+            } else {
+                nokiaMenuOpen = true;
+                nokiaMenuSel  = 0;
             }
+            repaint();
+            return;
+        }
+        if (keyCode == -7) {
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
+                repaint();
+            } else {
+                pm.setListener(prevListener);
+                display.setCurrent(backScreen);
+            }
+            return;
+        }
+        if (nokiaMenuOpen) {
+            int action = getGameAction(keyCode);
+            if (action == UP && nokiaMenuSel > 0) {
+                nokiaMenuSel--;
+                repaint();
+            } else if (action == DOWN && nokiaMenuSel < nokiaMenuItems.length - 1) {
+                nokiaMenuSel++;
+                repaint();
+            } else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+                repaint();
+            }
+            return;
         }
         int count  = pm.getTrackCount();
         if (count == 0) return;
@@ -444,7 +428,7 @@ public class QueueView extends Canvas
                      Graphics.HCENTER | Graphics.TOP);
 
         int listTop = hdrH + 1;
-        int skH     = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int skH     = SUB_FONT.getHeight() + PAD * 2;
         int listH   = h - listTop - skH;
         int itemH   = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
         int numW    = NUM_FONT.stringWidth("999") + PAD;
@@ -536,7 +520,8 @@ public class QueueView extends Canvas
         }
 
         g.setClip(cx, cy, cw, ch);
-        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h);
     }
 
     // -------------------------------------------------------------------------
@@ -546,7 +531,7 @@ public class QueueView extends Canvas
     private void ensureVisible(int index) {
         int h       = getHeight();
         int hdrH    = HDR_FONT.getHeight() + PAD * 2;
-        int skH     = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int skH     = SUB_FONT.getHeight() + PAD * 2;
         int listH   = h - hdrH - 1 - skH;
         int itemH   = NAME_FONT.getHeight() + SUB_FONT.getHeight() + PAD * 2;
         if (itemH <= 0) return;

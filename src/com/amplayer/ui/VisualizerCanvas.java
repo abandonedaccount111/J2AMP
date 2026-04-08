@@ -90,8 +90,6 @@ public class VisualizerCanvas extends Canvas implements CommandListener {
         this.display    = display;
         this.backScreen = backScreen;
         setFullScreenMode(true);
-        addCommand(CMD_BACK);
-        setCommandListener(this);
         // Stagger phases so bars don't all pulse together
         for (int i = 0; i < BARS; i++) {
             phase[i] = i * (1000 / BARS);
@@ -226,8 +224,10 @@ public class VisualizerCanvas extends Canvas implements CommandListener {
             hdrH = 0;
         }
 
+        int skH = SUB_FONT.getHeight() + PAD * 2;
+
         // Bar area
-        int areaH = h - hdrH - PAD;
+        int areaH = h - hdrH - skH - PAD;
         int totalBarW = w - PAD * 2;
         int barW  = totalBarW / BARS;
         if (barW < 2) barW = 2;
@@ -258,7 +258,23 @@ public class VisualizerCanvas extends Canvas implements CommandListener {
 
         // Subtle accent line at bottom
         g.setColor(COLOR_ACCENT);
-        g.fillRect(0, h - 2, w, 2);
+        g.fillRect(0, h - skH - 2, w, 2);
+
+        drawSoftKeyBar(g, w, h, skH);
+    }
+
+    private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
+        int barY = h - skH;
+        g.setColor(COLOR_HDR);
+        g.fillRect(0, barY, w, skH);
+        g.setColor(COLOR_DIVIDER);
+        g.drawLine(0, barY, w, barY);
+        g.setFont(SUB_FONT);
+        int labelY = barY + (skH - SUB_FONT.getHeight()) / 2;
+        g.setColor(COLOR_TEXT1);
+        g.drawString("Options", PAD, labelY, Graphics.LEFT | Graphics.TOP);
+        g.setColor(COLOR_TEXT2);
+        g.drawString("Back", w - PAD, labelY, Graphics.RIGHT | Graphics.TOP);
     }
 
     // -------------------------------------------------------------------------
@@ -266,8 +282,12 @@ public class VisualizerCanvas extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
+        if (keyCode == -6 || keyCode == -7) {
+            goBack();
+            return;
+        }
         int action = getGameAction(keyCode);
-        if (action == FIRE || keyCode == -8 /* BACK */) {
+        if (action == FIRE) {
             goBack();
         }
     }
@@ -279,6 +299,29 @@ public class VisualizerCanvas extends Canvas implements CommandListener {
     private void goBack() {
         stopAnimation();
         display.setCurrent(backScreen);
+    }
+
+    // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private long pressTime_T = 0;
+
+    protected void pointerPressed(int x, int y) {
+        pressTime_T = System.currentTimeMillis();
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if ((System.currentTimeMillis() - pressTime_T) < 500) {
+            int h = getHeight();
+            int w = getWidth();
+            int skH = SUB_FONT.getHeight() + PAD * 2;
+            if (y > h - skH) {
+                goBack();
+            } else {
+                goBack(); // Any click exits visualizer
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

@@ -141,7 +141,6 @@ public class LazyList extends Canvas implements CommandListener {
     // Nokia soft-key menu
     // -------------------------------------------------------------------------
 
-    private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
 
@@ -158,15 +157,7 @@ public class LazyList extends Canvas implements CommandListener {
         names   = new String[32];
         subs    = new String[32];
         actions = new BaseAction[32];
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
-        if (!isNokia) {
-            addCommand(CMD_SELECT);
-            addCommand(CMD_BACK);
-            setCommandListener(this);
-            setFullScreenMode(false);
-        } else {
-            setFullScreenMode(true);
-        }
+        setFullScreenMode(true);
     }
 
     // -------------------------------------------------------------------------
@@ -270,7 +261,6 @@ public class LazyList extends Canvas implements CommandListener {
     public void setBackAction(Runnable r) { this.backAction = r; }
     public void setRefreshAction(Runnable r) { 
         this.refreshAction = r; 
-        if (!isNokia && r != null) { addCommand(new Command("Refresh", Command.ITEM, 2)); }
     }
     public void setSearchAction(Runnable r) { 
         this.searchAction = r; 
@@ -286,7 +276,6 @@ public class LazyList extends Canvas implements CommandListener {
             contextLabels[contextCount] = cmd.getLabel();
             contextTags[contextCount]   = tag;
             contextCount++;
-            if (!isNokia) addCommand(cmd);
         }
     }
 
@@ -297,7 +286,7 @@ public class LazyList extends Canvas implements CommandListener {
     protected void paint(Graphics g) {
         int w   = getWidth();
         int h   = getHeight();
-        int skH = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int skH = SUBNAME_FONT.getHeight() + PAD * 2;
         int searchH = (searchListener != null) ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
         int listH = h - TITLE_BAR_H - searchH - skH;
         if (listH < 1) listH = 1;
@@ -365,7 +354,8 @@ public class LazyList extends Canvas implements CommandListener {
             g.drawString("Loading...", PAD + ACCENT_W + 4, TITLE_BAR_H + PAD,
                          Graphics.LEFT | Graphics.TOP);
             g.setClip(cx, cy, cw, ch);
-            if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
+            drawSoftKeyBar(g, w, h, skH);
+            if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
             return;
         }
 
@@ -443,7 +433,8 @@ public class LazyList extends Canvas implements CommandListener {
         }
 
         g.setClip(cx, cy, cw, ch);
-        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
     }
 
     // -------------------------------------------------------------------------
@@ -466,9 +457,10 @@ public class LazyList extends Canvas implements CommandListener {
         if (nokiaMenuOpen) return;
         if (Math.abs(y - startY_T) > 5) {
             isDragging_T = true;
-            int newScroll = startOffset_T + (startY_T - y);
+            int deltaScroll = (startY_T - y);
+            int newScroll = startOffset_T + deltaScroll;
             
-            int skH     = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int skH     = SUBNAME_FONT.getHeight() + PAD * 2;
             int searchH = (searchListener != null) ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
             int listH   = getHeight() - TITLE_BAR_H - searchH - skH;
             int totalRows = Math.max(loadedCount, 1) + (loadingMore ? 1 : 0);
@@ -487,7 +479,7 @@ public class LazyList extends Canvas implements CommandListener {
 
     protected void pointerReleased(int x, int y) {
         if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
-            int skH = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int skH = SUBNAME_FONT.getHeight() + PAD * 2;
             int h = getHeight();
             int w = getWidth();
 
@@ -517,7 +509,8 @@ public class LazyList extends Canvas implements CommandListener {
                 return;
             }
 
-            if (isNokia && y > h - skH) {
+
+            if (y > h - skH) {
                 if (x > w / 2) {
                     if (backAction != null) backAction.run();
                 } else {
@@ -552,30 +545,31 @@ public class LazyList extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) {
-                if (nokiaMenuOpen) { nokiaMenuOpen = false; executeNokiaMenuItem(nokiaMenuSel); }
-                else               { nokiaMenuOpen = true;  nokiaMenuSel = 0; }
+        if (keyCode == -6) {
+            if (nokiaMenuOpen) { nokiaMenuOpen = false; executeNokiaMenuItem(nokiaMenuSel); }
+            else               { nokiaMenuOpen = true;  nokiaMenuSel = 0; }
+            repaint();
+            return;
+        }
+        if (keyCode == -7) {
+            if (nokiaMenuOpen) { nokiaMenuOpen = false; repaint(); }
+            else if (backAction != null) backAction.run();
+            return;
+        }
+        if (nokiaMenuOpen) {
+            int extraOpts = 0;
+            if (refreshAction != null) extraOpts++;
+            if (searchAction != null) extraOpts++;
+            int menuSize = 1 + contextCount + extraOpts;
+            int action   = getGameAction(keyCode);
+            if      (action == UP   && nokiaMenuSel > 0)             { nokiaMenuSel--; repaint(); }
+            else if (action == DOWN && nokiaMenuSel < menuSize - 1)  { nokiaMenuSel++; repaint(); }
+            else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
                 repaint();
-                return;
             }
-            if (keyCode == -7) {
-                if (nokiaMenuOpen) { nokiaMenuOpen = false; repaint(); }
-                else if (backAction != null) backAction.run();
-                return;
-            }
-            if (nokiaMenuOpen) {
-                int menuSize = 1 + contextCount;
-                int action   = getGameAction(keyCode);
-                if      (action == UP   && nokiaMenuSel > 0)             { nokiaMenuSel--; repaint(); }
-                else if (action == DOWN && nokiaMenuSel < menuSize - 1)  { nokiaMenuSel++; repaint(); }
-                else if (action == FIRE || keyCode == -5) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                    repaint();
-                }
-                return;
-            }
+            return;
         }
         int action = getGameAction(keyCode);
         if      (action == UP)                       moveUp();
@@ -622,7 +616,7 @@ public class LazyList extends Canvas implements CommandListener {
 
     private void ensureVisible() {
         if (selectedIndex == -1) return; // Search box is always pinned
-        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
         int searchH = (searchListener != null) ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
         int listH = getHeight() - TITLE_BAR_H - searchH - skH;
         if (listH < ITEM_H) return;

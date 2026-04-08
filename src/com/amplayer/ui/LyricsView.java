@@ -69,7 +69,6 @@ public class LyricsView extends Canvas
     // -------------------------------------------------------------------------
 
     private static final String[] NOKIA_MENU_ITEMS = { "Back" };
-    private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
 
@@ -144,12 +143,9 @@ public class LyricsView extends Canvas
         prevListener = pm.getListener();
         pm.setListener(this);
 
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
         setFullScreenMode(true);
-        if (!isNokia) {
-            addCommand(CMD_BACK);
-            setCommandListener(this);
-        }
+        addCommand(CMD_BACK);
+        setCommandListener(this);
 
         fetchLyrics(songId);
         startTimer();
@@ -587,7 +583,7 @@ public class LyricsView extends Canvas
                      w / 2, PAD, Graphics.HCENTER | Graphics.TOP);
 
         int lyricsTop = hdrH + 1;
-        int skH       = isNokia ? LINE_FONT.getHeight() + PAD * 2 : 0;
+        int skH       = LINE_FONT.getHeight() + PAD * 2;
         int lyricsH   = h - lyricsTop - skH;
         int maxW      = w - PAD * 4;
 
@@ -602,7 +598,8 @@ public class LyricsView extends Canvas
             g.setColor(COLOR_FUTURE);
             g.drawString(statusText, w / 2, lyricsTop + lyricsH / 2,
                          Graphics.HCENTER | Graphics.BASELINE);
-            if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
+            drawSoftKeyBar(g, w, h, skH);
+            if (nokiaMenuOpen) drawNokiaMenu(g, w, h);
             return;
         }
 
@@ -680,7 +677,8 @@ public class LyricsView extends Canvas
         }
 
         g.setClip(cx, cy, cw, ch);
-        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h); }
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h);
     }
 
     // -------------------------------------------------------------------------
@@ -690,42 +688,40 @@ public class LyricsView extends Canvas
     private static final long SEEK_STEP_MS = 10000L; // 10 s per repeated event
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    goBack();
-                } else {
-                    nokiaMenuOpen = true;
-                    nokiaMenuSel  = 0;
-                }
-                repaint();
-                return;
-            }
-            if (keyCode == -7) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    repaint();
-                } else {
-                    goBack();
-                }
-                return;
-            }
+        if (keyCode == -6) {
             if (nokiaMenuOpen) {
-                int action = getGameAction(keyCode);
-                if (action == UP && nokiaMenuSel > 0) {
-                    nokiaMenuSel--;
-                    repaint();
-                } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
-                    nokiaMenuSel++;
-                    repaint();
-                } else if (action == FIRE || keyCode == -5) {
-                    nokiaMenuOpen = false;
-                    goBack();
-                    repaint();
-                }
-                return;
+                nokiaMenuOpen = false;
+                goBack();
+            } else {
+                nokiaMenuOpen = true;
+                nokiaMenuSel  = 0;
             }
+            repaint();
+            return;
+        }
+        if (keyCode == -7) {
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
+                repaint();
+            } else {
+                goBack();
+            }
+            return;
+        }
+        if (nokiaMenuOpen) {
+            int action = getGameAction(keyCode);
+            if (action == UP && nokiaMenuSel > 0) {
+                nokiaMenuSel--;
+                repaint();
+            } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
+                nokiaMenuSel++;
+                repaint();
+            } else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                goBack();
+                repaint();
+            }
+            return;
         }
         int action = getGameAction(keyCode);
         switch (action) {
@@ -743,6 +739,65 @@ public class LyricsView extends Canvas
             case KEY_NUM4: pm.previous();                                      break;
             case KEY_NUM5: if (pm.isPlaying()) pm.pause(); else pm.resume();   break;
             case KEY_NUM6: pm.next();                                          break;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Touch Events
+    // -------------------------------------------------------------------------
+
+    private int  startY_T      = -1;
+    private int  startScroll_T = 0;
+    private boolean isDragging_T = false;
+    private long pressTime_T   = 0;
+
+    protected void pointerPressed(int x, int y) {
+        startY_T    = y;
+        isDragging_T = false;
+        pressTime_T  = System.currentTimeMillis();
+    }
+
+    protected void pointerDragged(int x, int y) {
+        if (nokiaMenuOpen) return;
+        if (Math.abs(y - startY_T) > 5) {
+            isDragging_T = true;
+            // Manual scrolling in lyrics? We usually sync to playback.
+            // But dragging could be used to seek.
+            // For now, let's allow dragging to seek through the song if possible.
+        }
+    }
+
+    protected void pointerReleased(int x, int y) {
+        if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 500) {
+            int h = getHeight();
+            int w = getWidth();
+            int skH = LINE_FONT.getHeight() + PAD * 2;
+
+            if (nokiaMenuOpen) {
+                int itemH  = LINE_FONT.getHeight() + 6;
+                int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+                int menuY  = h - skH - menuH;
+                if (y >= menuY && y <= menuY + menuH) {
+                    nokiaMenuOpen = false;
+                    goBack();
+                    repaint();
+                } else if (y > h - skH) {
+                    if (x > w / 2) { nokiaMenuOpen = false; repaint(); }
+                    else { nokiaMenuOpen = false; goBack(); repaint(); }
+                } else {
+                    nokiaMenuOpen = false; repaint();
+                }
+                return;
+            }
+
+            if (y > h - skH) {
+                if (x > w / 2) goBack();
+                else { nokiaMenuOpen = true; nokiaMenuSel = 0; repaint(); }
+                return;
+            }
+
+            // Clicking elsewhere toggles play/pause
+            if (pm.isPlaying()) pm.pause(); else pm.resume();
         }
     }
 

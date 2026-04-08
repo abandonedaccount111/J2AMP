@@ -94,12 +94,6 @@ public class MainMenu extends Canvas implements CommandListener {
     private       PlaybackManager  pm;  // set after PM is created; used for live track subtext
 
     // -------------------------------------------------------------------------
-    // Nokia soft-key bar
-    // -------------------------------------------------------------------------
-
-    private final boolean isNokia;
-
-    // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
@@ -107,15 +101,7 @@ public class MainMenu extends Canvas implements CommandListener {
         super();
         this.midlet  = midlet;
         this.display = display;
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
-        if (!isNokia) {
-            addCommand(CMD_SELECT);
-            addCommand(CMD_EXIT);
-            setCommandListener(this);
-            setFullScreenMode(false);
-        } else {
-            setFullScreenMode(true);
-        }
+        setFullScreenMode(true);
     }
 
     /** Called once the PlaybackManager is ready so the Now Playing row can show live info. */
@@ -130,7 +116,7 @@ public class MainMenu extends Canvas implements CommandListener {
     protected void paint(Graphics g) {
         int w     = getWidth();
         int h     = getHeight();
-        int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
         int listTop = STATUS_BAR_H;
         int listH   = h - STATUS_BAR_H - skH;
 
@@ -259,8 +245,8 @@ public class MainMenu extends Canvas implements CommandListener {
             g.setColor(COLOR_NAME);
             g.drawString(msg, w / 2, ty + PAD, Graphics.HCENTER | Graphics.TOP);
         }
-
-        if (isNokia) drawSoftKeyBar(g, w, h, skH);
+        
+        drawSoftKeyBar(g, w, h, skH);
     }
 
     private void drawSoftKeyBar(Graphics g, int w, int h, int skH) {
@@ -299,7 +285,7 @@ public class MainMenu extends Canvas implements CommandListener {
             int deltaItems = (startY_T - y) / ITEM_H;
             int newOffset = startOffset_T + deltaItems;
             
-            int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+            int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
             int listH = getHeight() - STATUS_BAR_H - skH;
             int vis   = listH / ITEM_H;
             int maxScroll = Math.max(0, LABELS.length - vis);
@@ -319,6 +305,16 @@ public class MainMenu extends Canvas implements CommandListener {
 
     protected void pointerReleased(int x, int y) {
         if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
+            int skH = SUBNAME_FONT.getHeight() + PAD * 2;
+            int h = getHeight();
+            int w = getWidth();
+
+            if (y > h - skH) {
+                if (x > w / 2) handleBack();
+                else fireSelection();
+                return;
+            }
+
             int listTop = STATUS_BAR_H;
             if (y >= listTop) {
                 int clickedIndex = scrollOffset + (y - listTop) / ITEM_H;
@@ -336,11 +332,8 @@ public class MainMenu extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
-        // Clear exit toast on any non-back key
-        if (isNokia) {
-            if (keyCode == -6) { showExitToast = false; fireSelection(); return; }
-            if (keyCode == -7) { handleBack(); return; }
-        }
+        if (keyCode == -6) { showExitToast = false; fireSelection(); return; }
+        if (keyCode == -7) { handleBack(); return; }
         showExitToast = false;
         int action = getGameAction(keyCode);
         if (action == UP) {
@@ -352,7 +345,7 @@ public class MainMenu extends Canvas implements CommandListener {
         } else if (action == DOWN) {
             if (selectedIndex < LABELS.length - 1) {
                 selectedIndex++;
-                int skH   = isNokia ? SUBNAME_FONT.getHeight() + PAD * 2 : 0;
+                int skH   = SUBNAME_FONT.getHeight() + PAD * 2;
                 int listH = getHeight() - STATUS_BAR_H - skH;
                 int vis   = listH / ITEM_H;
                 if (selectedIndex >= scrollOffset + vis)

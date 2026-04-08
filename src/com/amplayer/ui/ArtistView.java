@@ -68,7 +68,6 @@ public class ArtistView extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     private static final String[] NOKIA_MENU_ITEMS = { "Select", "Play Next", "Add to Queue", "Play Station" };
-    private final boolean isNokia;
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel  = 0;
 
@@ -148,19 +147,7 @@ public class ArtistView extends Canvas implements CommandListener {
         this.backScreen         = backScreen;
         this.midlet             = midlet;
 
-        isNokia = Settings.getDeviceEnvironment().indexOf("nokia") >= 0;
-        if (!isNokia) {
-            addCommand(CMD_BACK);
-            addCommand(CMD_SELECT);
-            addCommand(CMD_PLAY_NEXT);
-            addCommand(CMD_ADD_TO_QUEUE);
-            addCommand(CMD_PLAY_STATION);
-            setCommandListener(this);
-            setFullScreenMode(false);
-        } else {
-            setFullScreenMode(true);
-        }
-
+        setFullScreenMode(true);
         loadContent();
     }
 
@@ -346,7 +333,7 @@ public class ArtistView extends Canvas implements CommandListener {
     protected void paint(Graphics g) {
         int w     = getWidth();
         int h     = getHeight();
-        int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUB_FONT.getHeight() + PAD * 2;
         int listH = h - TITLE_H - skH;
 
         g.setColor(COLOR_BG);
@@ -373,14 +360,16 @@ public class ArtistView extends Canvas implements CommandListener {
             g.setColor(COLOR_SUB);
             g.drawString("Loading...", w / 2, TITLE_H + listH / 2,
                          Graphics.HCENTER | Graphics.BASELINE);
-            if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
+            drawSoftKeyBar(g, w, h, skH);
+            if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
             return;
         }
         if (errorMsg != null) {
             g.setFont(SUB_FONT);
             g.setColor(0xFF3B30);
             g.drawString(errorMsg, PAD, TITLE_H + PAD, Graphics.LEFT | Graphics.TOP);
-            if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
+            drawSoftKeyBar(g, w, h, skH);
+            if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
             return;
         }
         if (rowCount == 0) {
@@ -388,7 +377,8 @@ public class ArtistView extends Canvas implements CommandListener {
             g.setColor(COLOR_SUB);
             g.drawString("No content found.", w / 2, TITLE_H + listH / 2,
                          Graphics.HCENTER | Graphics.BASELINE);
-            if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
+            drawSoftKeyBar(g, w, h, skH);
+            if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
             return;
         }
 
@@ -473,7 +463,8 @@ public class ArtistView extends Canvas implements CommandListener {
         }
 
         g.setClip(cx, cy, cw, ch);
-        if (isNokia) { drawSoftKeyBar(g, w, h, skH); if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH); }
+        drawSoftKeyBar(g, w, h, skH);
+        if (nokiaMenuOpen) drawNokiaMenu(g, w, h, skH);
     }
 
     // -------------------------------------------------------------------------
@@ -481,42 +472,40 @@ public class ArtistView extends Canvas implements CommandListener {
     // -------------------------------------------------------------------------
 
     protected void keyPressed(int keyCode) {
-        if (isNokia) {
-            if (keyCode == -6) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                } else {
-                    nokiaMenuOpen = true;
-                    nokiaMenuSel  = 0;
-                }
-                repaint();
-                return;
-            }
-            if (keyCode == -7) {
-                if (nokiaMenuOpen) {
-                    nokiaMenuOpen = false;
-                    repaint();
-                } else {
-                    display.setCurrent(backScreen);
-                }
-                return;
-            }
+        if (keyCode == -6) {
             if (nokiaMenuOpen) {
-                int action = getGameAction(keyCode);
-                if (action == UP && nokiaMenuSel > 0) {
-                    nokiaMenuSel--;
-                    repaint();
-                } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
-                    nokiaMenuSel++;
-                    repaint();
-                } else if (action == FIRE || keyCode == -5) {
-                    nokiaMenuOpen = false;
-                    executeNokiaMenuItem(nokiaMenuSel);
-                    repaint();
-                }
-                return;
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+            } else {
+                nokiaMenuOpen = true;
+                nokiaMenuSel  = 0;
             }
+            repaint();
+            return;
+        }
+        if (keyCode == -7) {
+            if (nokiaMenuOpen) {
+                nokiaMenuOpen = false;
+                repaint();
+            } else {
+                display.setCurrent(backScreen);
+            }
+            return;
+        }
+        if (nokiaMenuOpen) {
+            int action = getGameAction(keyCode);
+            if (action == UP && nokiaMenuSel > 0) {
+                nokiaMenuSel--;
+                repaint();
+            } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
+                nokiaMenuSel++;
+                repaint();
+            } else if (action == FIRE || keyCode == -5) {
+                nokiaMenuOpen = false;
+                executeNokiaMenuItem(nokiaMenuSel);
+                repaint();
+            }
+            return;
         }
         if (!loaded || rowCount == 0) return;
         int action = getGameAction(keyCode);
@@ -605,7 +594,7 @@ public class ArtistView extends Canvas implements CommandListener {
             isDragging_T = true;
             int newScroll = startOffset_T + (startY_T - y);
             
-            int skH    = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int skH    = SUB_FONT.getHeight() + PAD * 2;
             int listH  = getHeight() - TITLE_H - skH;
             int totalH = rowCount > 0 ? rowYPos[rowCount] : 0;
             int maxScroll = Math.max(0, totalH - listH);
@@ -622,7 +611,7 @@ public class ArtistView extends Canvas implements CommandListener {
 
     protected void pointerReleased(int x, int y) {
         if (!isDragging_T && (System.currentTimeMillis() - pressTime_T) < 300) {
-            int skH = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+            int skH = SUB_FONT.getHeight() + PAD * 2;
             int h = getHeight();
             int w = getWidth();
 
@@ -649,7 +638,8 @@ public class ArtistView extends Canvas implements CommandListener {
                 return;
             }
 
-            if (isNokia && y > h - skH) {
+
+            if (y > h - skH) {
                 if (x > w / 2) {
                     display.setCurrent(backScreen);
                 } else {
@@ -671,8 +661,8 @@ public class ArtistView extends Canvas implements CommandListener {
                     }
                 }
             }
-        }
-    }
+    }}
+   
 
     protected void keyRepeated(int keyCode) { keyPressed(keyCode); }
 
@@ -714,7 +704,7 @@ public class ArtistView extends Canvas implements CommandListener {
     }
 
     private void ensureVisible() {
-        int skH   = isNokia ? SUB_FONT.getHeight() + PAD * 2 : 0;
+        int skH   = SUB_FONT.getHeight() + PAD * 2;
         int listH = getHeight() - TITLE_H - skH;
         int absY  = rowYPos[selectedIndex];
         int ih    = rowHeights[selectedIndex];
