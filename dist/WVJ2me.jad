@@ -1,8 +1,8 @@
 MIDlet-1: J2AMP,/amplayer.png,com.amplayer.midlets.AppleMusicMIDlet
-MIDlet-Jar-Size: 920492
+MIDlet-Jar-Size: 923858
 MIDlet-Jar-URL: WVJ2me.jar
-MIDlet-Name: widevine-j2me
-MIDlet-Vendor: widevine-j2me
-MIDlet-Version: 1.0.0
+MIDlet-Name: J2AMP
+MIDlet-Vendor: J2AMP
+MIDlet-Version: 1.0.1
 MicroEdition-Configuration: CLDC-1.1
 MicroEdition-Profile: MIDP-2.0

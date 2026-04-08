@@ -2,14 +2,16 @@
 
 J2AMP is a proof-of-concept but also very fully-featured music player for Apple Music (AM)
 
-Technically supports all devices with CLDC 1.1, MIDP 2.0 with JSR-75 and JSR-135, however due to Widevine DRM playback, device with large RAM/heap are required.
+Technically supports all devices with CLDC 1.1, MIDP 2.0 with JSR-75 and JSR-135 and HE-AACv2 support, however due to Widevine DRM playback, device with large RAM/heap are required.
 
-Currently tested on an Nokia E72.
+Currently tested on an Nokia E72 / J2ME Loader emulator.
 
 ### Some features:
 
-- Search and extended queuing to play artists, songs, albums and playlists from both the Apple Music  catalog and your AM library
+- Search and extended queuing to play artists, songs, albums and playlists from both the Apple Music catalog and your AM library
 - Quick navigation between songs, artists, albums and playlists.
+- Autoplay for artists, albums and playlists
+- Personal and artist radio stations
 - LastFM scrobbling
 - Lyrics viewing
 - Shuffle, repeat

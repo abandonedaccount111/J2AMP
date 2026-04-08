@@ -55,6 +55,7 @@ public class AppleMusicMIDlet extends MIDlet {
     private PlaybackManager   playbackManager;  // created eagerly in startApp
     private NowPlayingScreen  nowPlayingScreen; // created eagerly in startApp
     private LastFmScrobbler   scrobbler;
+    private boolean           initialized = false;
 
     // Source playlist context — set when playing from a playlist DetailView
     private String sourcePlaylistId;
@@ -72,36 +73,25 @@ public class AppleMusicMIDlet extends MIDlet {
     protected void startApp() throws MIDletStateChangeException {
         display = Display.getDisplay(this);
         
-        // if (Settings.getSupportedMp4ContentType() == null) {
-        //     final Alert alert = new Alert(
-        //         "Unsupported Device", "Your device is missing audio/mp4 playback support required by Apple Music.", 
-        //         null, AlertType.ERROR);
-        //     alert.setTimeout(Alert.FOREVER);
-        //     alert.setCommandListener(new CommandListener() {
-        //         public void commandAction(Command c, Displayable d) {
-        //             notifyDestroyed();
-        //         }
-        //     });
-        //     display.setCurrent(alert);
-        //     return;
-        // }
+        if (!initialized) {
+            Settings.load();
+            PlaybackManager.setCacheSize(Settings.cacheMb);
+            PlaybackManager.clearCache();   // remove any leftover files from a previous session
 
-        Settings.load();
-        PlaybackManager.setCacheSize(Settings.cacheMb);
-        PlaybackManager.clearCache();   // remove any leftover files from a previous session
-
-        String[] tokens = TokenStore.load();
-        if (tokens != null) {
-            // Tokens already in RMS — go straight to the main menu
-            api = new AMAPI(tokens[0], tokens[1]);
-            initMainScreens();
-            display.setCurrent(mainMenu);
-            syncLibrary(false, new Runnable() {
-                public void run() { display.setCurrent(mainMenu); }
-            });
-        } else {
-            // First run (or after reset) — show the token setup form
-            display.setCurrent(new TokenSetupForm(this, display));
+            String[] tokens = TokenStore.load();
+            if (tokens != null) {
+                // Tokens already in RMS — go straight to the main menu
+                api = new AMAPI(tokens[0], tokens[1]);
+                initMainScreens();
+                display.setCurrent(mainMenu);
+                syncLibrary(false, new Runnable() {
+                    public void run() { display.setCurrent(mainMenu); }
+                });
+            } else {
+                // First run (or after reset) — show the token setup form
+                display.setCurrent(new TokenSetupForm(this, display));
+            }
+            initialized = true;
         }
     }
 
@@ -139,7 +129,9 @@ public class AppleMusicMIDlet extends MIDlet {
     }
 
     protected void pauseApp() {
-        playbackManager.pause();
+        if (!Settings.playInBackground) {
+            playbackManager.pause();
+        }
     }
 
     protected void destroyApp(boolean unconditional) throws MIDletStateChangeException {
