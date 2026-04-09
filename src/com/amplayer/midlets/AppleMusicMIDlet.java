@@ -17,6 +17,8 @@ import com.amplayer.ui.BaseAction;
 import com.amplayer.ui.BaseList;
 import com.amplayer.ui.DetailView;
 import com.amplayer.ui.LazyList;
+import com.amplayer.ui.EqualizerView;
+import com.amplayer.ui.CustomEQEditView;
 import com.amplayer.ui.LastFmScrobbler;
 import com.amplayer.ui.NowPlayingScreen;
 import com.amplayer.ui.SearchForm;
@@ -288,6 +290,14 @@ public class AppleMusicMIDlet extends MIDlet {
 
     public void showSettings() {
         display.setCurrent(new SettingsForm(this, display, mainMenu, playbackManager));
+    }
+
+    public void showEqualizer(javax.microedition.lcdui.Displayable back) {
+        display.setCurrent(new EqualizerView(this, display, back, playbackManager));
+    }
+
+    public void showCustomEQEdit(javax.microedition.lcdui.Displayable back) {
+        display.setCurrent(new CustomEQEditView(this, display, back, playbackManager));
     }
 
     public void showStations() {

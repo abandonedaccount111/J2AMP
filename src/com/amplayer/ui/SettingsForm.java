@@ -64,12 +64,13 @@ public class SettingsForm extends Canvas implements CommandListener {
     private static final int LR_LASTFM     = 6;
     private static final int LR_LASTFM_NP  = 7;
     private static final int LR_VISUALIZER = 8;
-    private static final int LR_CJK_RENDER = 9;
-    private static final int LR_DB_RELOAD  = 10;
-    private static final int LR_MAX_ITEM   = 11;
-    private static final int LR_MAX_QUEUE  = 12;
-    private static final int LR_FORCE_DB   = 13;
-    private static final int LR_BB_WIFI    = 14;
+    private static final int LR_CJK_RENDER = 10;
+    private static final int LR_DB_RELOAD  = 11;
+    private static final int LR_MAX_ITEM   = 12;
+    private static final int LR_MAX_QUEUE  = 13;
+    private static final int LR_FORCE_DB   = 14;
+    private static final int LR_BB_WIFI    = 15;
+    private static final int LR_EQUALIZER  = 16;
 
     // -------------------------------------------------------------------------
     // Commands  (used only on non-Nokia devices)
@@ -123,8 +124,8 @@ public class SettingsForm extends Canvas implements CommandListener {
 
     /** Total number of visible rows. */
     private int rowCount() {
-        // Base: marquee, cache, perf, art, preload, autoplay, lastfm, visualizer, cjk_render, db_reload, max_item, max_queue, force_db = 13
-        int count = signedIn() ? 14 : 13;
+        // Base: marquee, cache, perf, art, preload, autoplay, lastfm, visualizer, cjk_render, db_reload, max_item, max_queue, force_db, equalizer = 14
+        int count = signedIn() ? 15 : 14;
         if (Settings.IS_BLACKBERRY) count++;
         return count;
     }
@@ -132,23 +133,24 @@ public class SettingsForm extends Canvas implements CommandListener {
     /** Map a display-row index to a logical row constant. */
     private int logicalRow(int di) {
         if (di <= LR_AUTOPLAY) return di;
-        if (di == 6) return LR_LASTFM;
+        if (di == 6) return LR_EQUALIZER;
+        if (di == 7) return LR_LASTFM;
         if (signedIn()) {
-            if (di == 7) return LR_LASTFM_NP;
-            if (di == 8) return LR_VISUALIZER;
-            if (di == 9) return LR_CJK_RENDER;
-            if (di == 10) return LR_DB_RELOAD;
-            if (di == 11) return LR_MAX_ITEM;
-            if (di == 12) return LR_MAX_QUEUE;
-            if (di == 13) return LR_FORCE_DB;
+            if (di == 8) return LR_LASTFM_NP;
+            if (di == 9) return LR_VISUALIZER;
+            if (di == 10) return LR_CJK_RENDER;
+            if (di == 11) return LR_DB_RELOAD;
+            if (di == 12) return LR_MAX_ITEM;
+            if (di == 13) return LR_MAX_QUEUE;
+            if (di == 14) return LR_FORCE_DB;
             return LR_BB_WIFI;
         }
-        if (di == 7) return LR_VISUALIZER;
-        if (di == 8) return LR_CJK_RENDER;
-        if (di == 9)  return LR_DB_RELOAD;
-        if (di == 10) return LR_MAX_ITEM;
-        if (di == 11) return LR_MAX_QUEUE;
-        if (di == 12) return LR_FORCE_DB;
+        if (di == 8) return LR_VISUALIZER;
+        if (di == 9) return LR_CJK_RENDER;
+        if (di == 10)  return LR_DB_RELOAD;
+        if (di == 11) return LR_MAX_ITEM;
+        if (di == 12) return LR_MAX_QUEUE;
+        if (di == 13) return LR_FORCE_DB;
         return LR_BB_WIFI;
     }
 
@@ -261,6 +263,7 @@ public class SettingsForm extends Canvas implements CommandListener {
             case LR_MAX_QUEUE:  return "Max Queue Size";
             case LR_FORCE_DB:   return "Force Reload DB";
             case LR_BB_WIFI:    return "BlackBerry WiFi";
+            case LR_EQUALIZER:  return "Equalizer";
         }
         return "";
     }
@@ -316,6 +319,8 @@ public class SettingsForm extends Canvas implements CommandListener {
                 return Settings.bbWifiEnabled
                     ? "Force WiFi routing: On"
                     : "Force WiFi routing: Off";
+            case LR_EQUALIZER:
+                return Settings.eqEnabled ? "Enabled" : "Disabled";
         }
         return "";
     }
@@ -484,6 +489,9 @@ public class SettingsForm extends Canvas implements CommandListener {
                 // Reset cached IAP so the new routing suffix takes effect immediately
                 IAPManager.reset();
                 repaint();
+                break;
+            case LR_EQUALIZER:
+                midlet.showEqualizer(this);
                 break;
         }
     }

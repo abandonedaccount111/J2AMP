@@ -15,6 +15,7 @@ Currently tested on an Nokia E72 / J2ME Loader emulator.
 - LastFM scrobbling
 - Lyrics viewing
 - Shuffle, repeat
+- Equalizer
 
 ### Images:
 

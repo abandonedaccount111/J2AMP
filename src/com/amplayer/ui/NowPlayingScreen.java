@@ -123,10 +123,11 @@ public class NowPlayingScreen extends Canvas
 
     private static final String[] NOKIA_MENU_ITEMS = {
         "Lyrics", "Queue", "Shuffle", "Repeat",
-        "Go to Artist", "Go to Album", "Go to Playlist", "Visualizer"
+        "Go to Artist", "Go to Album", "Go to Playlist", "Equalizer", "Visualizer"
     };
     private boolean nokiaMenuOpen = false;
-    private int     nokiaMenuSel  = 0;
+    private int     nokiaMenuSel    = 0;
+    private int     nokiaMenuOffset = 0;
 
     // ── Touch ──────────────────────────────────────────────────────────────
     private long pressTime_T = 0;
@@ -640,8 +641,9 @@ public class NowPlayingScreen extends Canvas
                 nokiaMenuOpen = false;
                 executeNokiaMenuItem(nokiaMenuSel);
             } else {
-                nokiaMenuOpen = true;
-                nokiaMenuSel  = 0;
+                nokiaMenuOpen   = true;
+                nokiaMenuSel    = 0;
+                nokiaMenuOffset = 0;
             }
             repaint();
             return;
@@ -661,9 +663,16 @@ public class NowPlayingScreen extends Canvas
             int action = getGameAction(keyCode);
             if (action == UP && nokiaMenuSel > 0) {
                 nokiaMenuSel--;
+                if (nokiaMenuSel < nokiaMenuOffset) nokiaMenuOffset = nokiaMenuSel;
                 repaint();
             } else if (action == DOWN && nokiaMenuSel < NOKIA_MENU_ITEMS.length - 1) {
                 nokiaMenuSel++;
+                int h = getHeight();
+                int itemH = SMALL_FONT.getHeight() + 6;
+                int maxMenuH = h * 75 / 100;
+                int visibleCount = (maxMenuH - PAD * 2) / itemH;
+                if (nokiaMenuSel >= nokiaMenuOffset + visibleCount)
+                    nokiaMenuOffset = nokiaMenuSel - visibleCount + 1;
                 repaint();
             } else if (action == FIRE || keyCode == -5) {
                 nokiaMenuOpen = false;
@@ -711,10 +720,11 @@ public class NowPlayingScreen extends Canvas
             // Nokia Menu
             if (nokiaMenuOpen) {
                 int itemH  = SMALL_FONT.getHeight() + 6;
-                int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+                int maxMenuH = h * 75 / 100;
+                int menuH  = Math.min(itemH * NOKIA_MENU_ITEMS.length + PAD * 2, maxMenuH);
                 int menuY  = h - skH - menuH;
                 if (y >= menuY && y <= menuY + menuH) {
-                    int clickedIdx = (y - menuY - PAD) / itemH;
+                    int clickedIdx = nokiaMenuOffset + (y - menuY - PAD) / itemH;
                     if (clickedIdx >= 0 && clickedIdx < NOKIA_MENU_ITEMS.length) {
                         nokiaMenuOpen = false;
                         executeNokiaMenuItem(clickedIdx);
@@ -735,7 +745,10 @@ public class NowPlayingScreen extends Canvas
                     stopProgressTimer();
                     display.setCurrent(backScreen);
                 } else {
-                    nokiaMenuOpen = true; nokiaMenuSel = 0; repaint();
+                    nokiaMenuOpen = true; 
+                    nokiaMenuSel = 0; 
+                    nokiaMenuOffset = 0;
+                    repaint();
                 }
                 return;
             }
@@ -815,25 +828,36 @@ public class NowPlayingScreen extends Canvas
             case 6: // Go to Playlist
                 goToPlaylist();
                 break;
-            case 7: // Visualizer
+            case 7: // Equalizer
+                if (midlet != null) midlet.showEqualizer(this);
+                break;
+            case 8: // Visualizer
                 if (midlet != null) midlet.showVisualizer(this);
                 break;
         }
     }
 
     private void drawNokiaMenu(Graphics g, int w, int h) {
-        int itemH  = SMALL_FONT.getHeight() + 6;
-        int skH    = SMALL_FONT.getHeight() + PAD * 2;
-        int menuH  = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
-        int menuY  = h - skH - menuH;
+        int itemH    = SMALL_FONT.getHeight() + 6;
+        int skH      = SMALL_FONT.getHeight() + PAD * 2;
+        int maxMenuH = h * 75 / 100;
+        int fullMenuH = itemH * NOKIA_MENU_ITEMS.length + PAD * 2;
+        int menuH    = Math.min(fullMenuH, maxMenuH);
+        int menuY    = h - skH - menuH;
 
         g.setColor(COLOR_CTRL_BG);
         g.fillRect(0, menuY, w, menuH);
         g.setColor(COLOR_DIVIDER);
         g.drawLine(0, menuY, w, menuY);
 
-        for (int i = 0; i < NOKIA_MENU_ITEMS.length; i++) {
-            int y = menuY + PAD + i * itemH;
+        int visibleCount = (menuH - PAD * 2) / itemH;
+        int end = Math.min(NOKIA_MENU_ITEMS.length, nokiaMenuOffset + visibleCount);
+
+        int cx = g.getClipX(), cy = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
+        g.setClip(0, menuY + 1, w, menuH - 1);
+
+        for (int i = nokiaMenuOffset; i < end; i++) {
+            int y = menuY + PAD + (i - nokiaMenuOffset) * itemH;
             if (i == nokiaMenuSel) {
                 g.setColor(COLOR_ACCENT);
                 g.fillRect(0, y - 2, w, itemH);
@@ -844,6 +868,18 @@ public class NowPlayingScreen extends Canvas
             g.setFont(SMALL_FONT);
             g.drawString(NOKIA_MENU_ITEMS[i], PAD, y, Graphics.LEFT | Graphics.TOP);
         }
+        
+        // Scroll indicator
+        if (fullMenuH > menuH) {
+            int barH = Math.max(4, menuH * visibleCount / NOKIA_MENU_ITEMS.length);
+            int barY = menuY + PAD + (menuH - PAD * 2 - barH) * nokiaMenuOffset / Math.max(1, NOKIA_MENU_ITEMS.length - visibleCount);
+            g.setColor(COLOR_DIVIDER);
+            g.fillRect(w - 3, menuY + PAD, 2, menuH - PAD * 2);
+            g.setColor(COLOR_ACCENT);
+            g.fillRect(w - 3, barY, 2, barH);
+        }
+
+        g.setClip(cx, cy, cw, ch);
     }
 
     protected void keyRepeated(int keyCode) {

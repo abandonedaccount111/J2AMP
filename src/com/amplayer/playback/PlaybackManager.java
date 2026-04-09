@@ -340,6 +340,7 @@ public class PlaybackManager implements PlayerListener {
             VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
             if (vc != null) vc.setLevel(100);
             player.addPlayerListener(this);
+            applyEqualizer();
             player.start();
             isPlaying = true;
             isLoading = false;
@@ -364,6 +365,7 @@ public class PlaybackManager implements PlayerListener {
         VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
         if (vc != null) vc.setLevel(100);
         player.addPlayerListener(this);
+        applyEqualizer();
         player.start();
         isPlaying = true;
         isLoading = false;
@@ -378,6 +380,7 @@ public class PlaybackManager implements PlayerListener {
         VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
         if (vc != null) vc.setLevel(100);
         player.addPlayerListener(this);
+        applyEqualizer();
         player.start();
         isPlaying = true;
         isLoading = false;
@@ -912,9 +915,112 @@ public class PlaybackManager implements PlayerListener {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
-
+ 
     private static String safe(String[] arr, int i) {
         if (arr == null || i < 0 || i >= arr.length) return "";
         return arr[i] != null ? arr[i] : "";
+    }
+
+    public String[] getEqualizerPresets() {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                return eq.getPresetNames();
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    public int getEqualizerNumberOfBands() {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                return eq.getNumberOfBands();
+            }
+        } catch (Throwable ignored) {}
+        return 0;
+    }
+
+    public int getEqualizerMinLevel() {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                return eq.getMinBandLevel();
+            }
+        } catch (Throwable ignored) {}
+        return -1500;
+    }
+
+    public int getEqualizerMaxLevel() {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                return eq.getMaxBandLevel();
+            }
+        } catch (Throwable ignored) {}
+        return 1500;
+    }
+
+    public void setEqualizerBandLevel(int band, int level) {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                eq.setBandLevel(level, band);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public int getEqualizerBandLevel(int band) {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                return eq.getBandLevel(band);
+            }
+        } catch (Throwable ignored) {}
+        return 0;
+    }
+
+    public int getEqualizerCenterFreq(int band) {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                return eq.getCenterFreq(band);
+            }
+        } catch (Throwable ignored) {}
+        return 0;
+    }
+
+    public void applyEqualizer() {
+        try {
+            javax.microedition.amms.control.audioeffect.EqualizerControl eq = (javax.microedition.amms.control.audioeffect.EqualizerControl) 
+                javax.microedition.amms.GlobalManager.getControl("javax.microedition.amms.control.audioeffect.EqualizerControl");
+            if (eq != null) {
+                if (!Settings.eqEnabled) {
+                    eq.setEnabled(false);
+                    return;
+                }
+                eq.setEnabled(true);
+                if (Settings.eqPreset >= 0) {
+                    String[] presets = eq.getPresetNames();
+                    if (presets != null && Settings.eqPreset < presets.length) {
+                        eq.setPreset(presets[Settings.eqPreset]);
+                    }
+                } else if (Settings.eqCustomLevels != null) {
+                    int bands = eq.getNumberOfBands();
+                    for (int i = 0; i < bands && i < Settings.eqCustomLevels.length; i++) {
+                        eq.setBandLevel(Settings.eqCustomLevels[i], i);
+                    }
+                }
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
     }
 }

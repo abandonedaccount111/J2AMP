@@ -28,6 +28,9 @@ import javax.microedition.media.Manager;
  *   Record 13 — maxQueueSize        (int: 0=auto, 100, 500, 1000...) default 0
  *   Record 14 — autoplayEnabled     ("1" or "0", default "0")
  *   Record 15 — playInBackground    ("1" or "0", default "1")
+ *   Record 16 — eqEnabled           ("1" or "0", default "0")
+ *   Record 17 — eqPreset            (int, default -1)
+ *   Record 18 — eqCustomLevels      (comma-separated ints)
  */
 public class Settings {
 
@@ -72,6 +75,9 @@ public class Settings {
     public static boolean cjkImageRender  = false;  // persisted as record 10
     public static boolean autoplayEnabled = false;   // persisted as record 14
     public static boolean playInBackground = true;   // persisted as record 15
+    public static boolean eqEnabled        = false;  // persisted as record 16
+    public static int     eqPreset         = -1;     // persisted as record 17
+    public static int[]   eqCustomLevels   = null;   // persisted as record 18
     public static int     queryLimit      = 100;    // derived-only
     public static String  audioContentType = getSupportedMp4ContentType(); // derived
     
@@ -223,8 +229,22 @@ public class Settings {
                 if (n2 >= 13) {
                     try { maxQueueSize = Integer.parseInt(readRec(rs2, 13).trim()); } catch (Exception e) {}
                 }
-                if (n2 >= 14) autoplayEnabled = "1".equals(readRec(rs2, 14));
                 if (n2 >= 15) playInBackground = !"0".equals(readRec(rs2, 15));
+                if (n2 >= 16) eqEnabled        = "1".equals(readRec(rs2, 16));
+                if (n2 >= 17) {
+                    try { eqPreset = Integer.parseInt(readRec(rs2, 17).trim()); } catch (Exception e) {}
+                }
+                if (n2 >= 18) {
+                    String s = readRec(rs2, 18);
+                    if (s != null && s.length() > 0) {
+                        try {
+                            String[] parts = strSplit(s, ',');
+                            eqCustomLevels = new int[parts.length];
+                            for (int i = 0; i < parts.length; i++)
+                                eqCustomLevels[i] = Integer.parseInt(parts[i].trim());
+                        } catch (Exception e) {}
+                    }
+                }
             } catch (Exception ignored) {
             } finally {
                 closeQuietly(rs2);
@@ -253,6 +273,18 @@ public class Settings {
             writeRec(rs, String.valueOf(maxQueueSize));
             writeRec(rs, autoplayEnabled ? "1" : "0");
             writeRec(rs, playInBackground ? "1" : "0");
+            writeRec(rs, eqEnabled ? "1" : "0");
+            writeRec(rs, String.valueOf(eqPreset));
+            if (eqCustomLevels != null) {
+                StringBuffer sb = new StringBuffer();
+                for (int i = 0; i < eqCustomLevels.length; i++) {
+                    if (i > 0) sb.append(',');
+                    sb.append(eqCustomLevels[i]);
+                }
+                writeRec(rs, sb.toString());
+            } else {
+                writeRec(rs, "");
+            }
         } catch (Exception ignored) {
         } finally {
             closeQuietly(rs);
@@ -302,5 +334,19 @@ public class Settings {
 
     private static void closeQuietly(RecordStore rs) {
         if (rs != null) try { rs.closeRecordStore(); } catch (Exception ignored) {}
+    }
+
+    private static String[] strSplit(String s, char sep) {
+        java.util.Vector v = new java.util.Vector();
+        int start = 0;
+        int end;
+        while ((end = s.indexOf(sep, start)) != -1) {
+            v.addElement(s.substring(start, end));
+            start = end + 1;
+        }
+        v.addElement(s.substring(start));
+        String[] res = new String[v.size()];
+        v.copyInto(res);
+        return res;
     }
 }
