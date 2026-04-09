@@ -147,17 +147,19 @@ public class AppleMusicMIDlet extends MIDlet {
     }
 
     public void showSearch() {
-        final javax.microedition.lcdui.Alert loading = new javax.microedition.lcdui.Alert("Search", "Loading...", null, javax.microedition.lcdui.AlertType.INFO);
-        loading.setTimeout(javax.microedition.lcdui.Alert.FOREVER);
-        loading.setIndicator(new javax.microedition.lcdui.Gauge(null, false, javax.microedition.lcdui.Gauge.INDEFINITE, javax.microedition.lcdui.Gauge.CONTINUOUS_RUNNING));
-        final javax.microedition.lcdui.Command searchCancel = new javax.microedition.lcdui.Command("Cancel", javax.microedition.lcdui.Command.CANCEL, 1);
-        loading.addCommand(searchCancel);
-        loading.setCommandListener(new javax.microedition.lcdui.CommandListener() {
-            public void commandAction(javax.microedition.lcdui.Command c, javax.microedition.lcdui.Displayable d) {
-                if (c == searchCancel) display.setCurrent(mainMenu);
-            }
-        });
-        display.setCurrent(loading);
+        final Alert loading = new Alert("Search", "Loading...", null, AlertType.INFO);
+        final Command searchCancel = new Command("Cancel", Command.CANCEL, 1);
+        if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+            loading.setTimeout(Alert.FOREVER);
+            loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));           
+            loading.addCommand(searchCancel);
+            loading.setCommandListener(new CommandListener() {
+                public void commandAction(Command c, Displayable d) {
+                    if (c == searchCancel) display.setCurrent(mainMenu);
+                }
+            });
+            display.setCurrent(loading);
+        }
         new Thread(new Runnable() {
             public void run() {
                 try {
@@ -165,9 +167,11 @@ public class AppleMusicMIDlet extends MIDlet {
                     display.setCurrent(new SearchForm(
                         AppleMusicMIDlet.this, display, a, a.getStorefront()));
                 } catch (Exception e) {
+                    if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
                     final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
                     loading.setString("Error: " + msg);
-                    loading.setType(javax.microedition.lcdui.AlertType.ERROR);
+                    loading.setType(AlertType.ERROR);
+                    }
                 }
             }
         }).start();
@@ -184,20 +188,24 @@ public class AppleMusicMIDlet extends MIDlet {
             }
         }
 
-        final Alert loading = new Alert("Library Sync", "Downloading library...", null, AlertType.INFO);
-        loading.setTimeout(Alert.FOREVER);
-        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
         
+        final Alert loading = new Alert("Library Sync", "Downloading library...", null, AlertType.INFO);
         final Command cancelCmd = new Command("Cancel", Command.CANCEL, 1);
-        loading.addCommand(cancelCmd);
-        loading.setCommandListener(new CommandListener() {
-            public void commandAction(Command c, Displayable d) {
-                if (c == cancelCmd) {
-                    if (onComplete != null) display.callSerially(onComplete);
+        if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+            loading.setTimeout(Alert.FOREVER);
+            loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+            
+            
+            loading.addCommand(cancelCmd);
+            loading.setCommandListener(new CommandListener() {
+                public void commandAction(Command c, Displayable d) {
+                    if (c == cancelCmd) {
+                        if (onComplete != null) display.callSerially(onComplete);
+                    }
                 }
-            }
-        });
-        display.setCurrent(loading);
+            });
+            display.setCurrent(loading);
+        }
 
         new Thread(new Runnable() {
             public void run() {
@@ -234,30 +242,33 @@ public class AppleMusicMIDlet extends MIDlet {
                         }
                         com.amplayer.utils.LibraryDb.save(dbTypes[dbIdx], ids, names, subs);
                     }
-                    
-                    loading.setString("Sync Complete!");
-                    loading.setType(AlertType.INFO);
-                    loading.setIndicator(null);
-                    loading.removeCommand(cancelCmd);
-                    loading.setTimeout(2000);
-                    new Thread(new Runnable() {
-                        public void run() {
-                            try { Thread.sleep(2000); } catch (Exception ignored) {}
-                            if (onComplete != null) display.callSerially(onComplete);
-                        }
-                    }).start();
+                    if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+                        loading.setString("Sync Complete!");
+                        loading.setType(AlertType.INFO);
+                        loading.setIndicator(null);
+                        loading.removeCommand(cancelCmd);
+                        loading.setTimeout(2000);
+                        new Thread(new Runnable() {
+                            public void run() {
+                                try { Thread.sleep(2000); } catch (Exception ignored) {}
+                                if (onComplete != null) display.callSerially(onComplete);
+                            }
+                        }).start();
+                    }
                 } catch (Exception e) {
-                    loading.setString("Sync Error: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
-                    loading.setType(AlertType.ERROR);
-                    loading.setIndicator(null);
-                    loading.removeCommand(cancelCmd);
-                    loading.setTimeout(3000);
-                    new Thread(new Runnable() {
-                        public void run() {
-                            try { Thread.sleep(3000); } catch (Exception ignored) {}
-                            if (onComplete != null) display.callSerially(onComplete);
-                        }
-                    }).start();
+                    if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+                        loading.setString("Sync Error: " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+                        loading.setType(AlertType.ERROR);
+                        loading.setIndicator(null);
+                        loading.removeCommand(cancelCmd);
+                        loading.setTimeout(3000);
+                        new Thread(new Runnable() {
+                            public void run() {
+                                try { Thread.sleep(3000); } catch (Exception ignored) {}
+                                if (onComplete != null) display.callSerially(onComplete);
+                            }
+                        }).start();
+                    }
                 }
             }
         }).start();
@@ -280,17 +291,20 @@ public class AppleMusicMIDlet extends MIDlet {
     }
 
     public void showStations() {
+        
         final Alert loading = new Alert("Stations", "Loading...", null, AlertType.INFO);
-        loading.setTimeout(Alert.FOREVER);
-        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
-        final Command cancelCmd = new Command("Cancel", Command.CANCEL, 1);
-        loading.addCommand(cancelCmd);
-        loading.setCommandListener(new CommandListener() {
-            public void commandAction(Command c, Displayable d) {
-                if (c == cancelCmd) display.setCurrent(mainMenu);
-            }
-        });
-        display.setCurrent(loading);
+        if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+            loading.setTimeout(Alert.FOREVER);
+            loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+            final Command cancelCmd = new Command("Cancel", Command.CANCEL, 1);
+            loading.addCommand(cancelCmd);
+            loading.setCommandListener(new CommandListener() {
+                public void commandAction(Command c, Displayable d) {
+                    if (c == cancelCmd) display.setCurrent(mainMenu);
+                }
+            });
+            display.setCurrent(loading);
+        }
 
         new Thread(new Runnable() {
             public void run() {
@@ -299,18 +313,20 @@ public class AppleMusicMIDlet extends MIDlet {
                     JSONObject resp = a.getPersonalStations();
                     JSONArray data = resp.getArray("data", null);
                     if (data == null || data.size() == 0) {
-                        loading.setString("No stations found.");
-                        loading.setType(AlertType.INFO);
-                        loading.setIndicator(null);
-                        loading.setTimeout(2000);
-                        new Thread(new Runnable() {
-                            public void run() {
-                                try { Thread.sleep(2000); } catch (Exception ignored) {}
-                                display.callSerially(new Runnable() {
-                                    public void run() { display.setCurrent(mainMenu); }
-                                });
-                            }
-                        }).start();
+                        if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+                            loading.setString("No stations found.");
+                            loading.setType(AlertType.INFO);
+                            loading.setIndicator(null);
+                            loading.setTimeout(2000);
+                            new Thread(new Runnable() {
+                                public void run() {
+                                    try { Thread.sleep(2000); } catch (Exception ignored) {}
+                                    display.callSerially(new Runnable() {
+                                        public void run() { display.setCurrent(mainMenu); }
+                                    });
+                                }
+                            }).start();
+                        }
                         return;
                     }
                     int n = data.size();
@@ -349,9 +365,11 @@ public class AppleMusicMIDlet extends MIDlet {
                         }
                     });
                 } catch (Exception e) {
-                    final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                    loading.setString("Error: " + msg);
-                    loading.setType(AlertType.ERROR);
+                    if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+                        final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                        loading.setString("Error: " + msg);
+                        loading.setType(AlertType.ERROR);
+                    }
                 }
             }
         }).start();
@@ -362,10 +380,13 @@ public class AppleMusicMIDlet extends MIDlet {
      * builds a queue, and enables station auto-queue mode on the PlaybackManager.
      */
     public void playStation(final String stationId, final String stationName) {
-        final Alert loading = new Alert(stationName, "Loading station...", null, AlertType.INFO);
-        loading.setTimeout(Alert.FOREVER);
-        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
-        display.setCurrent(loading);
+        
+            final Alert loading = new Alert(stationName, "Loading station...", null, AlertType.INFO);
+        if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+            loading.setTimeout(Alert.FOREVER);
+            loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+            display.setCurrent(loading);
+        }
 
         new Thread(new Runnable() {
             public void run() {
@@ -400,15 +421,17 @@ public class AppleMusicMIDlet extends MIDlet {
 
                     startPlayQueueInternal(ids, tNames, artists, artUrl, 0);
                 } catch (final Exception e) {
-                    final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                    display.callSerially(new Runnable() {
-                        public void run() {
-                            loading.setString("Error: " + msg);
-                            loading.setType(AlertType.ERROR);
-                            loading.setIndicator(null);
-                            loading.setTimeout(3000);
-                        }
-                    });
+                    if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+                        final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                        display.callSerially(new Runnable() {
+                            public void run() {
+                                loading.setString("Error: " + msg);
+                                loading.setType(AlertType.ERROR);
+                                loading.setIndicator(null);
+                                loading.setTimeout(3000);
+                            }
+                        });
+                    }
                 }
             }
         }).start();
@@ -669,21 +692,24 @@ public class AppleMusicMIDlet extends MIDlet {
             return;
         }
 
+
         final Alert loading = new Alert(
             title, 
             forceReload ? "Refreshing Database..." : "Loading...", 
             null, 
             AlertType.INFO);
-        loading.setTimeout(Alert.FOREVER);
-        loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
-        final Command libCancel = new Command("Cancel", Command.CANCEL, 1);
-        loading.addCommand(libCancel);
-        loading.setCommandListener(new CommandListener() {
-            public void commandAction(javax.microedition.lcdui.Command c, javax.microedition.lcdui.Displayable d) {
-                if (c == libCancel) display.setCurrent(mainMenu);
-            }
-        });
-        display.setCurrent(loading);
+        if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+            loading.setTimeout(Alert.FOREVER);
+            loading.setIndicator(new Gauge(null, false, Gauge.INDEFINITE, Gauge.CONTINUOUS_RUNNING));
+            final Command libCancel = new Command("Cancel", Command.CANCEL, 1);
+            loading.addCommand(libCancel);
+            loading.setCommandListener(new CommandListener() {
+                public void commandAction(javax.microedition.lcdui.Command c, javax.microedition.lcdui.Displayable d) {
+                    if (c == libCancel) display.setCurrent(mainMenu);
+                }
+            });
+            display.setCurrent(loading);
+        }
 
         new Thread(new Runnable() {
             public void run() {
@@ -728,9 +754,11 @@ public class AppleMusicMIDlet extends MIDlet {
                     }
                     displayCachedLibraryItems(title, itemType, res, dbType, endpoint);
                 } catch (Exception e) {
-                    final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                    loading.setString("Error: " + msg);
-                    loading.setType(javax.microedition.lcdui.AlertType.ERROR);
+                    if (!Settings.getDeviceEnvironment().equals("j2me_loader")) {
+                        final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                        loading.setString("Error: " + msg);
+                        loading.setType(javax.microedition.lcdui.AlertType.ERROR);
+                    }
                 }
             }
         }).start();

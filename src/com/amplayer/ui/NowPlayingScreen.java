@@ -266,13 +266,27 @@ public class NowPlayingScreen extends Canvas
         int w = getWidth();
         int h = getHeight();
         if (w <= 0 || h <= 0) return 64;
-        int ctrlH = NAME_FONT.getHeight() + PAD * 3;
         int size;
         if (w > h) {
+            // Landscape
+            int skH    = SMALL_FONT.getHeight() + PAD * 2;
+            int ctrlH  = NAME_FONT.getHeight() + PAD * 3;
+            int ctrlY  = h - ctrlH - skH;
             int artPaneW = w * 35 / 100;
-            size = Math.min(artPaneW - PAD * 2, h - ctrlH - PAD * 2);
+            size = Math.min(artPaneW - PAD * 2, ctrlY - PAD * 2);
         } else {
-            size = Math.min(w - PAD * 4, h / 2 - PAD * 2);
+            // Portrait
+            int skH    = SMALL_FONT.getHeight() + PAD * 2;
+            int ctrlH  = NAME_FONT.getHeight() + PAD * 3;
+            int ctrlY  = h - ctrlH - skH;
+            int barH   = 4;
+            int timeH  = SMALL_FONT.getHeight() + 4;
+            int barY   = ctrlY - PAD - barH - timeH;
+            
+            int textRows = NAME_FONT.getHeight() + SMALL_FONT.getHeight() * 2 + 3 + 3 + 3;
+            int topPad   = PAD * 3;
+            int gap      = PAD + 4;
+            size = Math.min(w - PAD * 4, barY - topPad - textRows - gap - PAD);
         }
         return size < 32 ? 32 : size;
     }
@@ -469,16 +483,18 @@ public class NowPlayingScreen extends Canvas
             int barY   = ctrlY - PAD - barH - timeH;
 
             int textRows = NAME_FONT.getHeight() + SMALL_FONT.getHeight() * 2 + 3 + 3 + 3;
-            int artSize  = Math.min(w - PAD * 4, barY - PAD * 4 - textRows);
+            int topPad   = PAD * 3;
+            int gap      = PAD + 4;
+            int artSize  = Math.min(w - PAD * 4, barY - topPad - textRows - gap - PAD);
             if (artSize < 32) artSize = 32;
             int artX = (w - artSize) / 2;
 
-            drawArt(g, artX, PAD * 2, artSize);
+            drawArt(g, artX, topPad, artSize);
 
             // Update marquee max overflow
             updateMarqueeMaxOvf(availW);
 
-            int textY  = PAD * 2 + artSize + PAD;
+            int textY  = topPad + artSize + gap;
             int textX  = PAD * 2;   // left edge for marquee; centered when text fits
 
             g.setColor(COLOR_TEXT1);
