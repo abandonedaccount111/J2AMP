@@ -53,6 +53,7 @@ public class NowPlayingScreen extends Canvas
     private static final Font SMALL_FONT = Font.getFont(Font.FACE_PROPORTIONAL, Font.STYLE_PLAIN, Font.SIZE_SMALL);
 
     private static final int PAD = 8;
+    private static final int TITLE_BAR_H = TITLE_FONT.getHeight() + PAD * 2;
 
     // -------------------------------------------------------------------------
     // Commands  (soft-keys as fallback for devices without full d-pad)
@@ -97,6 +98,7 @@ public class NowPlayingScreen extends Canvas
     private String  trackAlbum   = "";
     private boolean loadingTrack = false;
     private String  errorMsg     = null;
+    private boolean isAtmos      = false;
 
     // -------------------------------------------------------------------------
     // Progress timer
@@ -128,6 +130,7 @@ public class NowPlayingScreen extends Canvas
     private boolean nokiaMenuOpen = false;
     private int     nokiaMenuSel    = 0;
     private int     nokiaMenuOffset = 0;
+    private long    volumeShowTime  = 0;
 
     // ── Touch ──────────────────────────────────────────────────────────────
     private long pressTime_T = 0;
@@ -165,6 +168,7 @@ public class NowPlayingScreen extends Canvas
         trackAlbum     = "";
         loadingTrack   = true;
         errorMsg       = null;
+        isAtmos        = false;
         artImage       = null;
         artLoadStarted = false;
         marqueeOffset  = 0;
@@ -175,6 +179,7 @@ public class NowPlayingScreen extends Canvas
 
     public void onPlayStateChanged(boolean playing) {
         loadingTrack = false;
+        if (playing) isAtmos = pm.isplayingAtmos();
         if (playing) startProgressTimer();
         else         stopProgressTimer();
         repaint();
@@ -473,6 +478,8 @@ public class NowPlayingScreen extends Canvas
             } else if (trackAlbum.length() > 0) {
                 drawMarqueeText(g, trackAlbum, SMALL_FONT, rightX, textY, rightW);
             }
+            textY += SMALL_FONT.getHeight() + 3;
+            if (isAtmos) drawAtmosBadge(g, rightX, textY, Graphics.LEFT | Graphics.TOP);
 
             drawProgressBar(g, barX, barY, barW, barH, pos, dur);
 
@@ -518,11 +525,13 @@ public class NowPlayingScreen extends Canvas
             } else if (trackAlbum.length() > 0) {
                 drawMarqueeTextCentered(g, trackAlbum, SMALL_FONT, textX, textY, availW, w);
             }
+            textY += SMALL_FONT.getHeight() + 3;
 
             drawProgressBar(g, barX, barY, barW, barH, pos, dur);
         }
 
         drawSoftKeyBar(g, w, h, skH);
+        drawVolumeIndicator(g, w, h);
         if (nokiaMenuOpen) drawNokiaMenu(g, w, h);
     }
 
@@ -594,6 +603,19 @@ public class NowPlayingScreen extends Canvas
         g.setClip(leftX, y, availW, font.getHeight());
         g.drawString(text, leftX - marqueeOffset, y, Graphics.LEFT | Graphics.TOP);
         g.setClip(cx, cy2, cw, ch);
+    }
+
+    /** Draw the Dolby symbol: two back-to-back D shapes (right-facing + mirrored left-facing). */
+    private void drawAtmosBadge(Graphics g, int x, int y, int anchor) {
+        int sz  = SMALL_FONT.getHeight();
+        int gap = 2;
+        int totalW = sz + gap + sz;
+        int bx = ((anchor & Graphics.HCENTER) != 0) ? x - totalW / 2 : x;
+        g.setColor(COLOR_TEXT1);
+        // Right-facing D: flat left, curve right (270°→ CCW 180° → 90°)
+        g.fillArc(bx, y, sz, sz, 270, 180);
+        // Left-facing D (mirror): flat right, curve left (90° → CCW 180° → 270°)
+        g.fillArc(bx + sz + gap, y, sz, sz, 90, 180);
     }
 
     private void drawArt(Graphics g, int x, int y, int size) {
@@ -697,6 +719,16 @@ public class NowPlayingScreen extends Canvas
                 return;
             case RIGHT:
                 pm.next();
+                return;
+            case UP:
+                pm.setVolume(pm.getVolume() + 10);
+                volumeShowTime = System.currentTimeMillis();
+                repaint();
+                return;
+            case DOWN:
+                pm.setVolume(pm.getVolume() - 10);
+                volumeShowTime = System.currentTimeMillis();
+                repaint();
                 return;
         }
         // Number-key shortcuts
@@ -1151,5 +1183,40 @@ public class NowPlayingScreen extends Canvas
         int i = src.indexOf(from);
         if (i == -1) return src;
         return src.substring(0, i) + to + src.substring(i + from.length());
+    }
+
+    private void drawVolumeIndicator(Graphics g, int w, int h) {
+        if (System.currentTimeMillis() - volumeShowTime > 1500) return;
+
+        int barW = w * 60 / 100;
+        int barH = 10;
+        int boxW = barW + PAD * 4;
+        int boxH = barH + SMALL_FONT.getHeight() + PAD * 4;
+        int boxX = (w - boxW) / 2;
+        int boxY = TITLE_BAR_H + PAD * 2;
+
+        // Background Box container
+        g.setColor(0xA0000000); // Darker translucent black
+        g.fillRoundRect(boxX, boxY, boxW, boxH, 12, 12);
+        g.setColor(0x444447); // Subtle border
+        g.drawRoundRect(boxX, boxY, boxW, boxH, 12, 12);
+
+        int x = boxX + PAD * 2;
+        int y = boxY + PAD * 2;
+
+        // Progress track
+        g.setColor(0x333333);
+        g.fillRoundRect(x, y, barW, barH, 6, 6);
+
+        // Fill
+        int vol = pm.getVolume();
+        int fillW = barW * vol / 100;
+        g.setColor(COLOR_ACCENT);
+        g.fillRoundRect(x, y, fillW, barH, 6, 6);
+        
+        // Label
+        g.setFont(SMALL_FONT);
+        g.setColor(COLOR_TEXT1);
+        g.drawString("Volume " + vol + "%", w / 2, y + barH + 4, Graphics.HCENTER | Graphics.TOP);
     }
 }

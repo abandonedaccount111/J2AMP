@@ -31,6 +31,8 @@ import javax.microedition.media.Manager;
  *   Record 16 — eqEnabled           ("1" or "0", default "0")
  *   Record 17 — eqPreset            (int, default -1)
  *   Record 18 — eqCustomLevels      (comma-separated ints)
+ *   Record 19 — volume              (int 0-100, default 100)
+ *   Record 20 — binauralEnabled     ("1" or "0", default "0")
  */
 public class Settings {
 
@@ -78,8 +80,10 @@ public class Settings {
     public static boolean eqEnabled        = false;  // persisted as record 16
     public static int     eqPreset         = -1;     // persisted as record 17
     public static int[]   eqCustomLevels   = null;   // persisted as record 18
+    public static int     volume           = 100;    // persisted as record 19
     public static int     queryLimit      = 100;    // derived-only
     public static String  audioContentType = getSupportedMp4ContentType(); // derived
+    public static boolean binauralEnabled  = false;  // persisted as record 20
     
     public static String getSupportedMp4ContentType() {
         String[] types = Manager.getSupportedContentTypes(null);
@@ -245,6 +249,12 @@ public class Settings {
                         } catch (Exception e) {}
                     }
                 }
+                if (n2 >= 19) {
+                    try { volume = Integer.parseInt(readRec(rs2, 19).trim()); } catch (Exception e) {}
+                }
+                if (n2 >= 20) {
+                    binauralEnabled = "1".equals(readRec(rs2, 20));
+                }
             } catch (Exception ignored) {
             } finally {
                 closeQuietly(rs2);
@@ -285,6 +295,8 @@ public class Settings {
             } else {
                 writeRec(rs, "");
             }
+            writeRec(rs, String.valueOf(volume));
+            writeRec(rs, binauralEnabled ? "1" : "0");
         } catch (Exception ignored) {
         } finally {
             closeQuietly(rs);

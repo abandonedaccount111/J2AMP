@@ -71,6 +71,7 @@ public class SettingsForm extends Canvas implements CommandListener {
     private static final int LR_FORCE_DB   = 14;
     private static final int LR_BB_WIFI    = 15;
     private static final int LR_EQUALIZER  = 16;
+    private static final int LR_BINAURAL   = 17;
 
     // -------------------------------------------------------------------------
     // Commands  (used only on non-Nokia devices)
@@ -134,23 +135,25 @@ public class SettingsForm extends Canvas implements CommandListener {
     private int logicalRow(int di) {
         if (di <= LR_AUTOPLAY) return di;
         if (di == 6) return LR_EQUALIZER;
-        if (di == 7) return LR_LASTFM;
+        if (di == 7) return LR_BINAURAL;
+        if (di == 8) return LR_LASTFM;
         if (signedIn()) {
-            if (di == 8) return LR_LASTFM_NP;
-            if (di == 9) return LR_VISUALIZER;
-            if (di == 10) return LR_CJK_RENDER;
-            if (di == 11) return LR_DB_RELOAD;
-            if (di == 12) return LR_MAX_ITEM;
-            if (di == 13) return LR_MAX_QUEUE;
-            if (di == 14) return LR_FORCE_DB;
+            if (di == 9) return LR_LASTFM_NP;
+            if (di == 10) return LR_VISUALIZER;
+            if (di == 11) return LR_CJK_RENDER;
+            if (di == 12) return LR_DB_RELOAD;
+            if (di == 13) return LR_MAX_ITEM;
+            if (di == 14) return LR_MAX_QUEUE;
+            if (di == 15) return LR_FORCE_DB;
             return LR_BB_WIFI;
         }
-        if (di == 8) return LR_VISUALIZER;
-        if (di == 9) return LR_CJK_RENDER;
-        if (di == 10)  return LR_DB_RELOAD;
-        if (di == 11) return LR_MAX_ITEM;
-        if (di == 12) return LR_MAX_QUEUE;
-        if (di == 13) return LR_FORCE_DB;
+        if (di == 9) return LR_VISUALIZER;
+        if (di == 10) return LR_CJK_RENDER;
+        if (di == 11)  return LR_DB_RELOAD;
+        if (di == 12) return LR_MAX_ITEM;
+        if (di == 13) return LR_MAX_QUEUE;
+        if (di == 14) return LR_FORCE_DB;
+
         return LR_BB_WIFI;
     }
 
@@ -264,6 +267,7 @@ public class SettingsForm extends Canvas implements CommandListener {
             case LR_FORCE_DB:   return "Force Reload DB";
             case LR_BB_WIFI:    return "BlackBerry WiFi";
             case LR_EQUALIZER:  return "Equalizer";
+            case LR_BINAURAL:   return "Dolby Atmos";
         }
         return "";
     }
@@ -321,6 +325,8 @@ public class SettingsForm extends Canvas implements CommandListener {
                     : "Force WiFi routing: Off";
             case LR_EQUALIZER:
                 return Settings.eqEnabled ? "Enabled" : "Disabled";
+            case LR_BINAURAL:
+                return Settings.binauralEnabled ? "Binaural audio" : "Normal";
         }
         return "";
     }
@@ -492,6 +498,11 @@ public class SettingsForm extends Canvas implements CommandListener {
                 break;
             case LR_EQUALIZER:
                 midlet.showEqualizer(this);
+                break;
+            case LR_BINAURAL:
+                Settings.binauralEnabled = !Settings.binauralEnabled;
+                Settings.save();
+                repaint();
                 break;
         }
     }

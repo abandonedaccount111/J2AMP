@@ -66,6 +66,9 @@ public class PlaybackManager implements PlayerListener {
     private boolean shuffle         = false;
     private int[]   shuffledIndices = null;
     private int     shufflePos      = 0;
+    
+    private boolean isAtmos = false;
+    private boolean isNextAtmos = false;
 
     // -------------------------------------------------------------------------
     // Repeat state
@@ -276,7 +279,9 @@ public class PlaybackManager implements PlayerListener {
                         try {
                             songUrl = helper.getWebPlaybackURL(
                                 id, "songs",
-                                api.getDeveloperToken(), api.getUserToken());
+                                api.getDeveloperToken(), api.getUserToken(), Settings.binauralEnabled);
+                            isAtmos = songUrl.indexOf("bm") >= 0;
+                            isNextAtmos = false;
                             data = helper.getAMDecryptedSong(
                                 songUrl, null, clientIdBlob, privateKeyDer,
                                 api.getDeveloperToken(), api.getUserToken());
@@ -288,6 +293,7 @@ public class PlaybackManager implements PlayerListener {
                             String[] urls = helper.getUploadedWebPlaybackURL(
                                 id, "songs",
                                 api.getDeveloperToken(), api.getUserToken());
+                            isNextAtmos = false;
                             InputStream is = helper.getStream(urls[0]);
                             if (is == null) throw new Exception("Failed to get stream");
                             startPlaybackFromInputStream(is, urls[1]);
@@ -297,6 +303,8 @@ public class PlaybackManager implements PlayerListener {
                     }
                     // Attempt to play from file stream 
                     if (isEncrypted) {
+                        isAtmos = isNextAtmos;
+                        isNextAtmos = false;
                         boolean started = startPlaybackFromFile(cachePath);
                         if (!started) {
                             // Fallback: read into byte array (older devices)
@@ -362,8 +370,11 @@ public class PlaybackManager implements PlayerListener {
         player = Manager.createPlayer(bais, Settings.getSupportedMp4ContentType());
         player.realize();
         player.prefetch();
-        VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
-        if (vc != null) vc.setLevel(100);
+        VolumeControl vc = (VolumeControl) player.getControl("javax.microedition.media.control.VolumeControl");
+        if (vc != null) {
+            vc.setMute(false);
+            vc.setLevel(Settings.volume);
+        }
         player.addPlayerListener(this);
         applyEqualizer();
         player.start();
@@ -377,8 +388,11 @@ public class PlaybackManager implements PlayerListener {
         player = Manager.createPlayer(is, Settings.getAudioContentType(extension));
         player.realize();
         player.prefetch();
-        VolumeControl vc = (VolumeControl) player.getControl("VolumeControl");
-        if (vc != null) vc.setLevel(100);
+        VolumeControl vc2 = (VolumeControl) player.getControl("javax.microedition.media.control.VolumeControl");
+        if (vc2 != null) {
+            vc2.setMute(false);
+            vc2.setLevel(Settings.volume);
+        }
         player.addPlayerListener(this);
         applyEqualizer();
         player.start();
@@ -398,6 +412,24 @@ public class PlaybackManager implements PlayerListener {
             firePlayStateChanged(false);
         }
     }
+
+    public synchronized void setVolume(int level) {
+        if (level < 0)   level = 0;
+        if (level > 100) level = 100;
+        Settings.volume = level;
+        if (player != null) {
+            try {
+                VolumeControl vc = (VolumeControl) player.getControl("javax.microedition.media.control.VolumeControl");
+                if (vc != null) {
+                    vc.setMute(false);
+                    vc.setLevel(level);
+                }
+            } catch (Exception ignored) {}
+        }
+        Settings.save();
+    }
+
+    public int getVolume() { return Settings.volume; }
 
     public synchronized void resume() {
         if (player != null && !isPlaying && !isLoading) {
@@ -524,6 +556,7 @@ public class PlaybackManager implements PlayerListener {
     }
 
     public synchronized boolean isAutoplayEnabled() { return Settings.autoplayEnabled; }
+    public synchronized boolean isplayingAtmos() { return isAtmos; }
 
     public synchronized boolean isShuffled()  { return shuffle; }
     public synchronized int     getRepeatMode() { return repeatMode; }
@@ -646,7 +679,8 @@ public class PlaybackManager implements PlayerListener {
                     AMSongHelper helper = new AMSongHelper();
                     String songUrl = helper.getWebPlaybackURL(
                         id, "songs",
-                        api.getDeveloperToken(), api.getUserToken());
+                        api.getDeveloperToken(), api.getUserToken(), Settings.binauralEnabled);
+                    isNextAtmos = songUrl.indexOf("bm") >= 0;
                     byte[] data = helper.getAMDecryptedSong(
                         songUrl, null, clientIdBlob, privateKeyDer,
                         api.getDeveloperToken(), api.getUserToken());

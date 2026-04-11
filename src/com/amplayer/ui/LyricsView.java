@@ -122,7 +122,8 @@ public class LyricsView extends Canvas
 
     private String           status      = "Loading...";
     private boolean          loading     = true;
-    private volatile boolean timerActive = false;
+    private volatile boolean timerActive    = false;
+    private long             volumeShowTime = 0;
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -678,6 +679,7 @@ public class LyricsView extends Canvas
 
         g.setClip(cx, cy, cw, ch);
         drawSoftKeyBar(g, w, h, skH);
+        drawVolumeIndicator(g, w, h);
         if (nokiaMenuOpen) drawNokiaMenu(g, w, h);
     }
 
@@ -733,6 +735,16 @@ public class LyricsView extends Canvas
                 return;
             case RIGHT:
                 pm.next();
+                return;
+            case UP:
+                pm.setVolume(pm.getVolume() + 10);
+                volumeShowTime = System.currentTimeMillis();
+                repaint();
+                return;
+            case DOWN:
+                pm.setVolume(pm.getVolume() - 10);
+                volumeShowTime = System.currentTimeMillis();
+                repaint();
                 return;
         }
         switch (keyCode) {
@@ -868,5 +880,40 @@ public class LyricsView extends Canvas
 
     public void commandAction(Command c, Displayable d) {
         if (c == CMD_BACK) goBack();
+    }
+
+    private void drawVolumeIndicator(Graphics g, int w, int h) {
+        if (System.currentTimeMillis() - volumeShowTime > 1500) return;
+
+        int barW = w * 60 / 100;
+        int barH = 10;
+        int boxW = barW + PAD * 4;
+        int boxH = barH + LINE_FONT.getHeight() + PAD * 4;
+        int boxX = (w - boxW) / 2;
+        int boxY = HDR_FONT.getHeight() + PAD * 4;
+
+        // Background Box container
+        g.setColor(0xA0000000); // Darker translucent black
+        g.fillRoundRect(boxX, boxY, boxW, boxH, 12, 12);
+        g.setColor(COLOR_PAST); // Subtle border
+        g.drawRoundRect(boxX, boxY, boxW, boxH, 12, 12);
+
+        int x = boxX + PAD * 2;
+        int y = boxY + PAD * 2;
+
+        // Progress track
+        g.setColor(0x333333);
+        g.fillRoundRect(x, y, barW, barH, 6, 6);
+
+        // Fill
+        int vol = pm.getVolume();
+        int fillW = barW * vol / 100;
+        g.setColor(0xFA2D48); // Apple Red
+        g.fillRoundRect(x, y, fillW, barH, 6, 6);
+        
+        // Label
+        g.setFont(LINE_FONT);
+        g.setColor(COLOR_ACTIVE);
+        g.drawString("Volume " + vol + "%", w / 2, y + barH + 4, Graphics.HCENTER | Graphics.TOP);
     }
 }

@@ -41,7 +41,54 @@ public class AMSongHelper {
     private static final String PREFETCH_KID = "00000000000000000000000000000000";
     private static final String PREFETCH_KEY = "32b8ade1769e26b1ffb8986352793fc6";
 
-    public String getWebPlaybackURL(String id, String type, String devToken, String userToken) throws Exception {
+    public String getWebPlaybackURL(String id, String type, String devToken, String userToken, boolean binauralEnabled) throws Exception {
+        // Get extendedAssetUrls
+        try {
+            AMAPI api = new AMAPI(devToken, userToken);
+            String endpoint = "/v1/catalog/" + api.getStorefront() + "/songs/" + id + "?extend=extendedAssetUrls";
+            String response = api.APIRequestString(endpoint, null, "GET", null, null);
+            JSONObject json = JSON.getObject(response);
+            JSONObject data = json.getArray("data").getObject(0);
+            JSONObject attributes = data.getObject("attributes");
+            JSONObject assets = attributes.getObject("extendedAssetUrls");
+            String url = assets.getString("enhancedHls");
+
+            if (url.indexOf("apple.com") >= 0) {
+                url = strReplace(url, "https://", "http://");
+                url = strReplace(url, "_lossless.m3u8", "_default.m3u8");
+            }
+            // Check if the m3u8 has wv keys
+            String hlsContent = getText(url);
+            if (hlsContent.indexOf("urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed") >= 0) {
+                // Get lines of the hlsContent
+                Vector lines = splitLines(hlsContent);
+                // Find line with #EXT-X-STREAM-INF
+                if (binauralEnabled) {
+                    for (int i = 0; i < lines.size(); i++) {
+                        String line = (String) lines.elementAt(i);
+                            if (line.indexOf("gr64") >= 0 && line.indexOf("bm") >= 0) {
+                                // Get the prefix of the url
+                                String prefix = url.substring(0, url.lastIndexOf('/') + 1);
+                                return prefix + line;
+                            }
+                    }   
+                }
+                for (int i = 0; i < lines.size(); i++) {
+                    String line = (String) lines.elementAt(i);
+                    if (line.indexOf("gr64") >= 0 && line.indexOf("bm") < 0) {
+                            // Get the prefix of the url
+                            String prefix = url.substring(0, url.lastIndexOf('/') + 1);
+                            return prefix + line;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("getWebPlaybackURL error: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+
+        // If extendedAssetUrls does not have WV keys, use the old method   
         AMAPI api = new AMAPI(devToken, userToken);
         String endpoint = "WebObjects/MZPlay.woa/wa/webPlayback";
         String prefix = "https://play.itunes.apple.com/";

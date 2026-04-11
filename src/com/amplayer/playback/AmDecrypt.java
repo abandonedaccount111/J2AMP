@@ -9,6 +9,9 @@ import org.bouncycastle.crypto.modes.CBCBlockCipher;
 import org.bouncycastle.crypto.params.ParametersWithIV;
 import org.bouncycastle.crypto.params.KeyParameter;
 import com.widevine.utils.ByteUtils;
+import javax.crypto.Cipher;
+import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.spec.IvParameterSpec;
 
 /**
  * Apple Music MP4 decryption - ported from amdecrypt.js.
@@ -23,6 +26,14 @@ public class AmDecrypt {
     /** Default decryption key for legacy AAC songs without per-sample keys. */
     public static final byte[] DEFAULT_SONG_DECRYPTION_KEY =
         ByteUtils.fromHex("32b8ade1769e26b1ffb8986352793fc6");
+
+    /** True when JSR-177 (SATSA) javax.crypto.Cipher is available at runtime. */
+    private static final boolean JSR177;
+    static {
+        boolean found = false;
+        try { Class.forName("javax.crypto.Cipher"); found = true; } catch (Exception ignored) {}
+        JSR177 = found;
+    }
 
     // =========================================================================
     // Public data types
@@ -662,6 +673,66 @@ public class AmDecrypt {
     }
 
     // =========================================================================
+    // Cipher helpers — JSR-177 first, BouncyCastle fallback
+    // =========================================================================
+
+    /**
+     * AES-128-CTR decrypt {@code len} bytes from {@code data[offset]}.
+     * Uses JSR-177 (SATSA) when available, falls back to BouncyCastle.
+     */
+    private static byte[] aesCtrDecrypt(byte[] key, byte[] iv,
+                                        byte[] data, int offset, int len) {
+        if (JSR177) {
+            try {
+                Cipher c = Cipher.getInstance("AES/CTR/NoPadding");
+                c.init(Cipher.DECRYPT_MODE,
+                       new SecretKeySpec(key,0, key.length, "AES"),
+                       new IvParameterSpec(iv, 0, iv.length));
+                byte[] out = new byte[len];
+                c.doFinal(data, offset, len, out, 0);
+                return out;
+            } catch (Exception ignored) { /* fall through to BouncyCastle */
+                System.out.println("SATSA err");
+                ignored.printStackTrace();
+            }
+        }
+        SICBlockCipher ctr = new SICBlockCipher(new AESEngine());
+        ctr.init(false, new ParametersWithIV(new KeyParameter(key), iv));
+        byte[] out = new byte[len];
+        ctr.processBytes(data, offset, len, out, 0);
+        return out;
+    }
+
+    /**
+     * AES-128-CBC decrypt {@code cbcLen} bytes (must be a multiple of 16) from
+     * {@code data[offset]}.
+     * Uses JSR-177 (SATSA) when available, falls back to BouncyCastle.
+     */
+    private static byte[] aesCbcDecryptBlocks(byte[] key, byte[] iv,
+                                              byte[] data, int offset, int cbcLen) {
+        if (JSR177) {
+            try {
+                Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
+                c.init(Cipher.DECRYPT_MODE,
+                       new SecretKeySpec(key,0, key.length, "AES"),
+                       new IvParameterSpec(iv, 0, iv.length));
+                byte[] out = new byte[cbcLen];
+                c.doFinal(data, offset, cbcLen, out, 0);
+                return out;
+            } catch (Exception ignored) {                
+                System.out.println("SATSA err");
+                ignored.printStackTrace();/* fall through to BouncyCastle */ 
+            }
+        }
+        CBCBlockCipher cbc = new CBCBlockCipher(new AESEngine());
+        cbc.init(false, new ParametersWithIV(new KeyParameter(key), iv));
+        byte[] out = new byte[cbcLen];
+        for (int b = 0; b < cbcLen; b += 16)
+            cbc.processBlock(data, offset + b, out, b);
+        return out;
+    }
+
+    // =========================================================================
     // Decryption
     // =========================================================================
 
@@ -705,29 +776,40 @@ public class AmDecrypt {
                     iv = padded;
                 }
 
-                SICBlockCipher ctr = new SICBlockCipher(new AESEngine());
-                ctr.init(false, new ParametersWithIV(new KeyParameter(key), iv));
-
                 if (sample.subsamples.length > 0) {
-                    Vector plain  = new Vector();
-                    int    offset = 0;
+                    // Collect all encrypted bytes in order, decrypt as one CTR stream,
+                    // then reassemble with clear bytes.  This preserves counter continuity
+                    // across subsample boundaries and works with both JSR-177 and BC.
+                    int totalEncLen = 0;
+                    for (int j = 0; j < sample.subsamples.length; j++)
+                        totalEncLen += sample.subsamples[j][1];
+                    byte[] encAll = new byte[totalEncLen];
+                    int pos = 0, sOff = 0;
+                    for (int j = 0; j < sample.subsamples.length; j++) {
+                        sOff += sample.subsamples[j][0];
+                        int encBytes = sample.subsamples[j][1];
+                        System.arraycopy(sample.data, sOff, encAll, pos, encBytes);
+                        pos += encBytes; sOff += encBytes;
+                    }
+                    byte[] decAll = aesCtrDecrypt(key, iv, encAll, 0, totalEncLen);
+                    Vector plain = new Vector();
+                    int offset = 0, decOff = 0;
                     for (int j = 0; j < sample.subsamples.length; j++) {
                         int clearBytes = sample.subsamples[j][0];
                         int encBytes   = sample.subsamples[j][1];
                         plain.addElement(slice(sample.data, offset, offset + clearBytes));
                         offset += clearBytes;
-                        byte[] dec = new byte[encBytes];
-                        ctr.processBytes(sample.data, offset, encBytes, dec, 0);
-                        plain.addElement(dec);
+                        if (encBytes > 0) {
+                            plain.addElement(slice(decAll, decOff, decOff + encBytes));
+                            decOff += encBytes;
+                        }
                         offset += encBytes;
                     }
                     if (offset < sample.data.length)
                         plain.addElement(slice(sample.data, offset, sample.data.length));
                     parts.addElement(concatParts(plain));
                 } else {
-                    byte[] dec = new byte[sample.data.length];
-                    ctr.processBytes(sample.data, 0, sample.data.length, dec, 0);
-                    parts.addElement(dec);
+                    parts.addElement(aesCtrDecrypt(key, iv, sample.data, 0, sample.data.length));
                 }
 
             } else {
@@ -757,12 +839,7 @@ public class AmDecrypt {
                     if (totalEncLen > 0) {
                         int cbcLen = totalEncLen & ~0xf;
                         if (cbcLen > 0) {
-                            CBCBlockCipher cbc = new CBCBlockCipher(new AESEngine());
-                            cbc.init(false, new ParametersWithIV(new KeyParameter(key), iv));
-                            byte[] cbcOut = new byte[cbcLen];
-                            for (int b = 0; b < cbcLen; b += 16)
-                                cbc.processBlock(encConcatBuf, b, cbcOut, b);
-                            decConcat = cbcOut;
+                            decConcat = aesCbcDecryptBlocks(key, iv, encConcatBuf, 0, cbcLen);
                         }
                         if (cbcLen < totalEncLen) {
                             byte[] tail = slice(encConcatBuf, cbcLen, totalEncLen);
@@ -799,23 +876,17 @@ public class AmDecrypt {
                         continue;
                     }
                     int truncated = sampleLen & ~0xf;
-                    CBCBlockCipher cbc = new CBCBlockCipher(new AESEngine());
-                    cbc.init(false, new ParametersWithIV(new KeyParameter(key), iv));
-
-                    if (sampleLen % 16 == 0) {
-                        byte[] dec = new byte[sampleLen];
-                        for (int b = 0; b < sampleLen; b += 16)
-                            cbc.processBlock(sample.data, b, dec, b);
-                        parts.addElement(dec);
-                    } else if (truncated > 0) {
-                        byte[] dec = new byte[truncated];
-                        for (int b = 0; b < truncated; b += 16)
-                            cbc.processBlock(sample.data, b, dec, b);
-                        byte[] tail = slice(sample.data, truncated, sampleLen);
-                        byte[] full = new byte[dec.length + tail.length];
-                        System.arraycopy(dec, 0, full, 0, dec.length);
-                        System.arraycopy(tail, 0, full, dec.length, tail.length);
-                        parts.addElement(full);
+                    if (truncated > 0) {
+                        byte[] dec = aesCbcDecryptBlocks(key, iv, sample.data, 0, truncated);
+                        if (sampleLen == truncated) {
+                            parts.addElement(dec);
+                        } else {
+                            byte[] tail = slice(sample.data, truncated, sampleLen);
+                            byte[] full = new byte[dec.length + tail.length];
+                            System.arraycopy(dec,  0, full, 0,          dec.length);
+                            System.arraycopy(tail, 0, full, dec.length, tail.length);
+                            parts.addElement(full);
+                        }
                     } else {
                         parts.addElement(sample.data);
                     }
