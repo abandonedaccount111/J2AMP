@@ -153,6 +153,7 @@ public class NowPlayingScreen extends Canvas
         trackName    = pm.getCurrentName();
         trackArtist  = pm.getCurrentArtist();
         loadingTrack = pm.isLoading();
+        isAtmos      = pm.isplayingAtmos();
     }
 
     /** Called once API credentials are ready (after first playback auth). */
@@ -454,8 +455,8 @@ public class NowPlayingScreen extends Canvas
             int barX   = rightX;
             int barY   = ctrlY - PAD - barH - timeH;
 
-            // Update marquee max overflow based on this frame's available width
-            updateMarqueeMaxOvf(rightW);
+            // Update marquee max overflow
+            updateMarqueeMaxOvf(rightW, false);
 
             int textY = PAD * 2;
             g.setColor(COLOR_TEXT1);
@@ -478,7 +479,7 @@ public class NowPlayingScreen extends Canvas
             } else if (trackAlbum.length() > 0) {
                 drawMarqueeText(g, trackAlbum, SMALL_FONT, rightX, textY, rightW);
             }
-            textY += SMALL_FONT.getHeight() + 3;
+            textY += SMALL_FONT.getHeight() + 5;
             if (isAtmos) drawAtmosBadge(g, rightX, textY, Graphics.LEFT | Graphics.TOP);
 
             drawProgressBar(g, barX, barY, barW, barH, pos, dur);
@@ -490,7 +491,7 @@ public class NowPlayingScreen extends Canvas
             int barX   = PAD * 2;
             int barY   = ctrlY - PAD - barH - timeH;
 
-            int textRows = NAME_FONT.getHeight() + SMALL_FONT.getHeight() * 2 + 3 + 3 + 3;
+            int textRows = NAME_FONT.getHeight() + SMALL_FONT.getHeight() * 2 + 9;
             int topPad   = PAD * 3;
             int gap      = PAD + 4;
             int artSize  = Math.min(w - PAD * 4, barY - topPad - textRows - gap - PAD);
@@ -500,13 +501,32 @@ public class NowPlayingScreen extends Canvas
             drawArt(g, artX, topPad, artSize);
 
             // Update marquee max overflow
-            updateMarqueeMaxOvf(availW);
+            updateMarqueeMaxOvf(availW, true);
 
             int textY  = topPad + artSize + gap;
             int textX  = PAD * 2;   // left edge for marquee; centered when text fits
 
             g.setColor(COLOR_TEXT1);
-            drawMarqueeTextCentered(g, trackName, NAME_FONT, textX, textY, availW, w);
+            int badgeW  = isAtmos ? (SMALL_FONT.getHeight() + 6) : 0;
+            int titleW  = NAME_FONT.stringWidth(trackName);
+            int combinedW = titleW + badgeW;
+            int drawY   = textY;
+            int atmosY  = drawY + (NAME_FONT.getHeight() - SMALL_FONT.getHeight()) / 2;
+
+            if (combinedW <= availW) {
+                int startX = (w - combinedW) / 2;
+                g.setFont(NAME_FONT);
+                g.drawString(trackName, startX, drawY, Graphics.LEFT | Graphics.TOP);
+                if (isAtmos) drawAtmosBadge(g, startX + titleW + 4, atmosY, Graphics.LEFT | Graphics.TOP);
+            } else {
+                int cx = g.getClipX(), cy2 = g.getClipY(), cw = g.getClipWidth(), ch = g.getClipHeight();
+                g.setClip(textX, drawY, availW, NAME_FONT.getHeight());
+                int scrollX = textX - marqueeOffset;
+                g.setFont(NAME_FONT);
+                g.drawString(trackName, scrollX, drawY, Graphics.LEFT | Graphics.TOP);
+                if (isAtmos) drawAtmosBadge(g, scrollX + titleW + 4, atmosY, Graphics.LEFT | Graphics.TOP);
+                g.setClip(cx, cy2, cw, ch);
+            }
             textY += NAME_FONT.getHeight() + 3;
 
             g.setColor(COLOR_ACCENT);
@@ -561,9 +581,11 @@ public class NowPlayingScreen extends Canvas
      * for the given available width. Called once per paint frame so the
      * marquee thread always has an up-to-date bound.
      */
-    private void updateMarqueeMaxOvf(int availW) {
+    private void updateMarqueeMaxOvf(int availW, boolean addAtmos) {
         int ovf = 0;
-        ovf = Math.max(ovf, NAME_FONT.stringWidth(trackName)   - availW);
+        int titleW = NAME_FONT.stringWidth(trackName);
+        if (addAtmos && isAtmos) titleW += (SMALL_FONT.getHeight() + 6);
+        ovf = Math.max(ovf, titleW - availW);
         ovf = Math.max(ovf, SMALL_FONT.stringWidth(trackArtist) - availW);
         if (trackAlbum.length() > 0)
             ovf = Math.max(ovf, SMALL_FONT.stringWidth(trackAlbum) - availW);
@@ -609,13 +631,15 @@ public class NowPlayingScreen extends Canvas
     private void drawAtmosBadge(Graphics g, int x, int y, int anchor) {
         int sz  = SMALL_FONT.getHeight();
         int gap = 2;
-        int totalW = sz + gap + sz;
+        int totalW = sz + gap;
         int bx = ((anchor & Graphics.HCENTER) != 0) ? x - totalW / 2 : x;
         g.setColor(COLOR_TEXT1);
-        // Right-facing D: flat left, curve right (270°→ CCW 180° → 90°)
-        g.fillArc(bx, y, sz, sz, 270, 180);
-        // Left-facing D (mirror): flat right, curve left (90° → CCW 180° → 270°)
-        g.fillArc(bx + sz + gap, y, sz, sz, 90, 180);
+        // Right-facing D: flat left, curve right. 
+        // We shift the bounding box left by sz/2 so the curve starts at bx.
+        g.fillArc(bx - sz / 2, y, sz, sz, 270, 180);
+        // Left-facing D (mirror): flat right, curve left.
+        // It starts after the first semi-circle (sz/2) and the gap.
+        g.fillArc(bx + sz / 2 + gap, y, sz, sz, 90, 180);
     }
 
     private void drawArt(Graphics g, int x, int y, int size) {

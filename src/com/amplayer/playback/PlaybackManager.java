@@ -67,8 +67,8 @@ public class PlaybackManager implements PlayerListener {
     private int[]   shuffledIndices = null;
     private int     shufflePos      = 0;
     
-    private boolean isAtmos = false;
-    private boolean isNextAtmos = false;
+    private boolean isAtmos     = false;
+    private static final Hashtable atmosCache = new Hashtable();
 
     // -------------------------------------------------------------------------
     // Repeat state
@@ -281,7 +281,7 @@ public class PlaybackManager implements PlayerListener {
                                 id, "songs",
                                 api.getDeveloperToken(), api.getUserToken(), Settings.binauralEnabled);
                             isAtmos = songUrl.indexOf("bm") >= 0;
-                            isNextAtmos = false;
+                            atmosCache.put(id, new Boolean(isAtmos));
                             data = helper.getAMDecryptedSong(
                                 songUrl, null, clientIdBlob, privateKeyDer,
                                 api.getDeveloperToken(), api.getUserToken());
@@ -293,7 +293,8 @@ public class PlaybackManager implements PlayerListener {
                             String[] urls = helper.getUploadedWebPlaybackURL(
                                 id, "songs",
                                 api.getDeveloperToken(), api.getUserToken());
-                            isNextAtmos = false;
+                            // Itunes uploads are not Atmos
+                            atmosCache.put(id, Boolean.FALSE);
                             InputStream is = helper.getStream(urls[0]);
                             if (is == null) throw new Exception("Failed to get stream");
                             startPlaybackFromInputStream(is, urls[1]);
@@ -303,8 +304,8 @@ public class PlaybackManager implements PlayerListener {
                     }
                     // Attempt to play from file stream 
                     if (isEncrypted) {
-                        isAtmos = isNextAtmos;
-                        isNextAtmos = false;
+                        Boolean b = (Boolean) atmosCache.get(id);
+                        isAtmos = b != null ? b.booleanValue() : false;
                         boolean started = startPlaybackFromFile(cachePath);
                         if (!started) {
                             // Fallback: read into byte array (older devices)
@@ -680,7 +681,8 @@ public class PlaybackManager implements PlayerListener {
                     String songUrl = helper.getWebPlaybackURL(
                         id, "songs",
                         api.getDeveloperToken(), api.getUserToken(), Settings.binauralEnabled);
-                    isNextAtmos = songUrl.indexOf("bm") >= 0;
+                    boolean itIs = songUrl.indexOf("bm") >= 0;
+                    atmosCache.put(id, new Boolean(itIs));
                     byte[] data = helper.getAMDecryptedSong(
                         songUrl, null, clientIdBlob, privateKeyDer,
                         api.getDeveloperToken(), api.getUserToken());
@@ -748,6 +750,7 @@ public class PlaybackManager implements PlayerListener {
                 cacheDirResolved = false;
                 totalCachedBytes = 0;
                 cacheQueue.removeAllElements();
+                atmosCache.clear();
             }
         }
     }
