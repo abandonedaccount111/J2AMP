@@ -28,11 +28,15 @@ public class AmDecrypt {
         ByteUtils.fromHex("32b8ade1769e26b1ffb8986352793fc6");
 
     /** True when JSR-177 (SATSA) javax.crypto.Cipher is available at runtime. */
-    private static final boolean JSR177;
+    private static final boolean JSR177_AVAILABLE;
     static {
         boolean found = false;
         try { Class.forName("javax.crypto.Cipher"); found = true; } catch (Exception ignored) {}
-        JSR177 = found;
+        JSR177_AVAILABLE = found;
+    }
+
+    private static boolean useJsr177() {
+        return JSR177_AVAILABLE && com.amplayer.utils.Settings.jsr177Enabled;
     }
 
     // =========================================================================
@@ -682,7 +686,7 @@ public class AmDecrypt {
      */
     private static byte[] aesCtrDecrypt(byte[] key, byte[] iv,
                                         byte[] data, int offset, int len) {
-        if (JSR177) {
+        if (useJsr177()) {
             try {
                 Cipher c = Cipher.getInstance("AES/CTR/NoPadding");
                 c.init(Cipher.DECRYPT_MODE,
@@ -710,7 +714,7 @@ public class AmDecrypt {
      */
     private static byte[] aesCbcDecryptBlocks(byte[] key, byte[] iv,
                                               byte[] data, int offset, int cbcLen) {
-        if (JSR177) {
+        if (useJsr177()) {
             try {
                 Cipher c = Cipher.getInstance("AES/CBC/NoPadding");
                 c.init(Cipher.DECRYPT_MODE,

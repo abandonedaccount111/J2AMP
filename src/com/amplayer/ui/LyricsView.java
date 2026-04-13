@@ -50,8 +50,8 @@ public class LyricsView extends Canvas
     // Monospaced variants used in CJK image render mode (consistent char width for inline image placement)
     private static final Font MONO_FONT     = Font.getFont(Font.FACE_MONOSPACE,    Font.STYLE_PLAIN, Font.SIZE_MEDIUM);
     private static final Font MONO_ACT_FONT = Font.getFont(Font.FACE_MONOSPACE,    Font.STYLE_BOLD,  Font.SIZE_LARGE);
-    private static final int  MONO_CHAR_W     = MONO_FONT.charWidth('M');
-    private static final int  MONO_ACT_CHAR_W = MONO_ACT_FONT.charWidth('M');
+    private static final int  MONO_CHAR_W     = MONO_FONT.charWidth('M') + 5;
+    private static final int  MONO_ACT_CHAR_W = MONO_ACT_FONT.charWidth('M') + 5;
 
     private static final String TAKUMI_SERVICE = "http://music.s60tube.io.vn";
 
@@ -173,6 +173,8 @@ public class LyricsView extends Canvas
             wrapCacheW     = -1;
             status         = "Loading...";
             loading        = true;
+            synchronized (cjkImages) { cjkImages.clear(); }
+            System.gc();
         }
         repaint();
         fetchLyrics(newId);
@@ -223,7 +225,7 @@ public class LyricsView extends Canvas
                         wrapCacheW     = -1;
                         loading        = false;
                     }
-                    if (Settings.cjkImageRender) fetchCjkImages();
+                    if (Settings.cjkImageRender) fetchCjkLines();
                     repaint();
                 } catch (Exception e) {
                     String msg = e.getMessage() != null ? e.getMessage() : e.toString();
@@ -296,10 +298,14 @@ public class LyricsView extends Canvas
     /** Build wrap cache for all lines at the given max pixel width. Uses mono font in CJK mode. */
     private void buildWrapCache(int maxW) {
         boolean cjkMode = Settings.cjkImageRender;
-        Font lf = cjkMode ? MONO_FONT : LINE_FONT;
         String[][] cache = new String[lineCount][];
-        for (int i = 0; i < lineCount; i++)
-            cache[i] = wrapText(lines[i], lf, maxW);
+        for (int i = 0; i < lineCount; i++) {
+            if (cjkMode && containsCjk(lines[i])) {
+                cache[i] = wrapCjkText(lines[i], MONO_CHAR_W, maxW);
+            } else {
+                cache[i] = wrapText(lines[i], cjkMode ? MONO_FONT : LINE_FONT, maxW);
+            }
+        }
         wrappedLines     = cache;
         wrapCacheW       = maxW;
         wrapCacheCjkMode = cjkMode;
@@ -368,6 +374,14 @@ public class LyricsView extends Canvas
     // CJK image rendering
     // -------------------------------------------------------------------------
 
+    private static boolean containsCjk(String s) {
+        if (s == null) return false;
+        for (int i = 0; i < s.length(); i++) {
+            if (isCjkCharacter(s.charAt(i))) return true;
+        }
+        return false;
+    }
+
     private static boolean isCjkCharacter(char ch) {
         return (ch >= 0x3400 && ch <= 0x4DBF)   // CJK Unified Ideographs Extension A
             || (ch >= 0x4E00 && ch <= 0x9FFF)   // CJK Unified Ideographs
@@ -378,8 +392,16 @@ public class LyricsView extends Canvas
             || (ch >= 0x1100 && ch <= 0x11FF)   // Hangul Jamo
             || (ch >= 0x3130 && ch <= 0x318F)   // Hangul Compatibility Jamo
             || (ch >= 0xAC00 && ch <= 0xD7AF)   // Hangul Syllables
+            || (ch >= 0xA960 && ch <= 0xA97F)   // Hangul Jamo Extended-A
+            || (ch >= 0xD7B0 && ch <= 0xD7FF)   // Hangul Jamo Extended-B
             || (ch >= 0x3000 && ch <= 0x303F)   // CJK Symbols and Punctuation
-            || (ch >= 0xFF66 && ch <= 0xFF9D);  // Halfwidth Katakana
+            || (ch >= 0x2E80 && ch <= 0x2EFF)   // CJK Radicals Supplement
+            || (ch >= 0x2F00 && ch <= 0x2FDF)   // Kangxi Radicals
+            || (ch >= 0x31C0 && ch <= 0x31EF)   // CJK Strokes
+            || (ch >= 0x3200 && ch <= 0x32FF)   // Enclosed CJK Letters and Months
+            || (ch >= 0x3300 && ch <= 0x33FF)   // CJK Compatibility
+            || (ch >= 0xFE30 && ch <= 0xFE4F)   // CJK Compatibility Forms
+            || (ch >= 0xFF00 && ch <= 0xFFEF);  // Halfwidth and Fullwidth Forms
     }
 
     private static String toHexRgb(int color) {
@@ -389,107 +411,99 @@ public class LyricsView extends Canvas
     }
 
     /**
-     * Fetch images for all unique CJK characters in the current lyrics,
-     * for each of the three lyric colors and both mono font sizes.
-     * Runs on the caller's thread — call from a background thread only.
+     * Fetch whole-line images for all possible CJK row combinations (Regular and Active).
      */
-    private void fetchCjkImages() {
-        // Collect unique CJK characters
-        Hashtable unique = new Hashtable();
+    private void fetchCjkLines() {
+        Hashtable unique = new Hashtable(); // key: "row_size" -> row text
         int lcSnap;
         String[] linesSnap;
+        int maxW;
         synchronized (LyricsView.this) {
-            lcSnap    = lineCount;
+            lcSnap = lineCount;
             linesSnap = lines;
+            maxW = getWidth() - PAD * 4;
+            if (maxW <= 0) maxW = 200;
         }
+        if (lcSnap == 0) return;
+
+        // Collect rows for both sizes for all CJK lines
         for (int i = 0; i < lcSnap; i++) {
             String line = linesSnap[i];
-            for (int j = 0; j < line.length(); j++) {
-                char ch = line.charAt(j);
-                if (isCjkCharacter(ch))
-                    unique.put(new Integer(ch), Boolean.TRUE);
-            }
+            if (!containsCjk(line)) continue;
+
+            // Normal size rows
+            String[] r1 = wrapCjkText(line, MONO_CHAR_W, maxW);
+            for (int j = 0; j < r1.length; j++) 
+                unique.put(r1[j] + "_" + MONO_CHAR_W, r1[j]);
+
+            // Active size rows
+            String[] r2 = wrapCjkText(line, MONO_ACT_CHAR_W, maxW);
+            for (int j = 0; j < r2.length; j++) 
+                unique.put(r2[j] + "_" + MONO_ACT_CHAR_W, r2[j]);
         }
+
         if (unique.isEmpty()) return;
 
-        int[] colors = { COLOR_PAST, COLOR_ACTIVE, COLOR_FUTURE };
-        int[] sizes  = { MONO_CHAR_W, MONO_ACT_CHAR_W };
-
+        String whiteHex = toHexRgb(COLOR_ACTIVE);
         java.util.Enumeration en = unique.keys();
         while (en.hasMoreElements()) {
-            char ch = (char) ((Integer) en.nextElement()).intValue();
-            for (int ci = 0; ci < colors.length; ci++) {
-                for (int si = 0; si < sizes.length; si++) {
-                    String key = (int) ch + "_" + toHexRgb(colors[ci]) + "_" + sizes[si];
-                    synchronized (cjkImages) {
-                        if (cjkImages.containsKey(key)) continue;
-                    }
-                    try {
-                        String hexColor = "#" + toHexRgb(colors[ci]);
-                        String url = TAKUMI_SERVICE + "/takumi?text="
-                                + URLEncoder.encode(String.valueOf(ch))
-                                + "&width=" + sizes[si]
-                                + "&fontSize=" + sizes[si]
-                                + "&color=" + URLEncoder.encode(hexColor);
-                        SocketHttpConnection conn = SocketHttpConnection.open(url);
-                        conn.setRequestMethod("GET");
-                        InputStream in = conn.openInputStream();
-                        try {
-                            byte[] data = IOUtils.readAll(in);
-                            Image img = Image.createImage(data, 0, data.length);
-                            synchronized (cjkImages) {
-                                cjkImages.put(key, img);
-                            }
-                        } finally {
-                            IOUtils.closeQuietly(in);
-                            try { conn.close(); } catch (Exception e2) {}
-                        }
-                    } catch (Exception e) {
-                        // skip — char will render as box placeholder
-                    }
+            String key = (String) en.nextElement();
+            String row = (String) unique.get(key);
+            int size = key.endsWith("_" + MONO_ACT_CHAR_W) ? MONO_ACT_CHAR_W : MONO_CHAR_W;
+
+            synchronized (cjkImages) { if (cjkImages.containsKey(key)) continue; }
+            try {
+                String url = TAKUMI_SERVICE + "/takumi?text="
+                        + URLEncoder.encode(row)
+                        + "&fontSize=" + size
+                        + "&width=" + maxW
+                        + "&align=center"
+                        + "&color=" + URLEncoder.encode("#" + whiteHex);
+                SocketHttpConnection conn = SocketHttpConnection.open(url);
+                conn.setRequestMethod("GET");
+                InputStream in = conn.openInputStream();
+                try {
+                    byte[] data = IOUtils.readAll(in);
+                    Image img = Image.createImage(data, 0, data.length);
+                    synchronized (cjkImages) { cjkImages.put(key, img); }
+                } finally {
+                    IOUtils.closeQuietly(in);
+                    try { conn.close(); } catch (Exception e2) {}
                 }
-            }
+            } catch (Exception ignored) {}
         }
         repaint();
     }
 
     /**
-     * Draw a single wrapped row in CJK image mode: non-CJK chars via drawChar,
-     * CJK chars via pre-fetched images (box placeholder if not yet loaded).
+     * Draw a single wrapped row using Takumi image (white).
      */
-    private void drawCjkRow(Graphics g, String row, int cx, int y,
-                             int color, Font monoFont, int charW) {
+    private void drawCjkRow(Graphics g, String row, int cx, int y, Font monoFont, int charW) {
         if (row == null || row.length() == 0) return;
-        int totalW = row.length() * charW;
-        int startX = cx - totalW / 2;
-        String colorHex = toHexRgb(color);
-        g.setFont(monoFont);
-        g.setColor(color);
-        for (int i = 0; i < row.length(); i++) {
-            char ch = row.charAt(i);
-            int x = startX + i * charW;
-            if (isCjkCharacter(ch)) {
-                String key = (int) ch + "_" + colorHex + "_" + charW;
-                Image img;
-                synchronized (cjkImages) {
-                    img = (Image) cjkImages.get(key);
-                }
-                if (img != null) {
-                    g.drawImage(img, x, y, Graphics.LEFT | Graphics.TOP);
-                } else {
-                    // Placeholder box while image is loading
-                    int fh = monoFont.getHeight();
-                    g.drawRect(x + 1, y + 1, charW - 3, fh - 3);
-                }
-            } else {
-                g.drawChar(ch, x, y, Graphics.LEFT | Graphics.TOP);
-            }
+        String key = row + "_" + charW;
+        Image img;
+        synchronized (cjkImages) { img = (Image) cjkImages.get(key); }
+        if (img != null) {
+            g.drawImage(img, cx, y, Graphics.HCENTER | Graphics.TOP);
+        } else {
+            // Placeholder: draw characters using native font
+            g.setFont(monoFont);
+            g.drawString(row, cx, y, Graphics.HCENTER | Graphics.TOP);
         }
     }
 
     // -------------------------------------------------------------------------
     // Text wrapping
     // -------------------------------------------------------------------------
+
+    private static String betterTrim(String s) {
+        if (s == null) return null;
+        int start = 0, len = s.length();
+        while (start < len && (s.charAt(start) <= 32 || s.charAt(start) == 12288)) start++;
+        int end = len - 1;
+        while (end >= start && (s.charAt(end) <= 32 || s.charAt(end) == 12288)) end--;
+        return s.substring(start, end + 1);
+    }
 
     /**
      * Wrap text to fit within maxW pixels using word boundaries.
@@ -504,27 +518,59 @@ public class LyricsView extends Canvas
         int    len     = text.length();
 
         while (start < len) {
-            // Find how many characters fit on this row
             int end = len;
-            // Binary-search-style: walk forward until we exceed maxW
             int cur = start;
             int lastSpace = -1;
             while (cur < len) {
                 if (text.charAt(cur) == ' ') lastSpace = cur;
                 if (f.stringWidth(text.substring(start, cur + 1)) > maxW) {
-                    // Exceeded — break at last space if possible
                     end = (lastSpace > start) ? lastSpace : cur;
                     break;
                 }
                 cur++;
             }
-            rows.addElement(text.substring(start, end).trim());
-            start = end + 1;  // skip the space
+            if (end == start) end = start + 1; // force at least one char
+            rows.addElement(betterTrim(text.substring(start, end)));
+            start = end;
+            while (start < len && text.charAt(start) == ' ') start++;
         }
 
         String[] result = new String[rows.size()];
         for (int i = 0; i < result.length; i++) result[i] = (String) rows.elementAt(i);
         return result;
+    }
+
+    /**
+     * Wrap CJK text into multiple rows based on pixel width.
+     */
+    private static String[] wrapCjkText(String text, int charW, int maxW) {
+        if (text == null || text.length() == 0) return new String[]{ "" };
+        int charsPerRow = maxW / charW;
+        if (charsPerRow <= 0) charsPerRow = 1;
+        if (text.length() <= charsPerRow) return new String[]{ text };
+
+        Vector rows = new Vector();
+        int start = 0;
+        int len = text.length();
+        while (start < len) {
+            int end = start + charsPerRow;
+            if (end > len) end = len;
+            else {
+                // Try to find a space near the wrap point to split cleanly
+                for (int i = 0; i < charsPerRow / 3; i++) {
+                    if (text.charAt(end - i - 1) == ' ') {
+                        end = end - i;
+                        break;
+                    }
+                }
+            }
+            rows.addElement(betterTrim(text.substring(start, end)));
+            start = end;
+            while (start < len && text.charAt(start) == ' ') start++;
+        }
+        String[] res = new String[rows.size()];
+        for (int i = 0; i < res.length; i++) res[i] = (String) rows.elementAt(i);
+        return res;
     }
 
     // -------------------------------------------------------------------------
@@ -612,20 +658,26 @@ public class LyricsView extends Canvas
 
         boolean cjkMode = Settings.cjkImageRender;
 
-        // Ensure active-line wrap is cached (uses ACT or MONO_ACT font depending on mode)
+        // Ensure active-line wrap is cached (uses pixel math in CJK mode)
         if (curLine != activeCacheIdx) {
-            Font af = cjkMode ? MONO_ACT_FONT : ACT_FONT;
-            activeWrapped  = (curLine >= 0 && curLine < lc)
-                             ? wrapText(lines[curLine], af, maxW) : null;
+            if (curLine >= 0 && curLine < lc) {
+                if (cjkMode && containsCjk(lines[curLine])) {
+                    activeWrapped = wrapCjkText(lines[curLine], MONO_ACT_CHAR_W, maxW);
+                } else {
+                    activeWrapped = wrapText(lines[curLine], cjkMode ? MONO_ACT_FONT : ACT_FONT, maxW);
+                }
+            } else {
+                activeWrapped = null;
+            }
             activeCacheIdx = curLine;
         }
 
         // Compute total pixel height of all lines before curLine (for scroll)
-        Font     lineF  = cjkMode ? MONO_FONT : LINE_FONT;
         int heightBefore = 0;
         for (int i = 0; i < curLine && i < lc; i++) {
             String[] rows = wrappedLines[i];
-            heightBefore += rows.length * lineF.getHeight() + LINE_GAP;
+            int lineH = (cjkMode && containsCjk(lines[i])) ? MONO_CHAR_W : LINE_FONT.getHeight();
+            heightBefore += rows.length * lineH + LINE_GAP;
         }
 
         // Place the active line's first row at the vertical centre of the lyrics area
@@ -641,13 +693,15 @@ public class LyricsView extends Canvas
         int y = baseY;
         for (int i = 0; i < lc; i++) {
             boolean  active  = (i == curLine);
-            Font     f       = active ? (cjkMode ? MONO_ACT_FONT : ACT_FONT)
-                                      : (cjkMode ? MONO_FONT     : LINE_FONT);
+            boolean  isCjk   = cjkMode && containsCjk(lines[i]);
+            
             int      charW   = active ? MONO_ACT_CHAR_W : MONO_CHAR_W;
+            int      lineH   = isCjk ? charW : (active ? ACT_FONT.getHeight() : LINE_FONT.getHeight());
+            
             String[] rows    = active ? activeWrapped : wrappedLines[i];
             if (rows == null) rows = wrappedLines[i]; // safety fallback
-            int      blockH  = rows.length * f.getHeight() + LINE_GAP;
-
+            int      blockH  = rows.length * lineH + LINE_GAP;
+            
             if (y + blockH < lyricsTop) { y += blockH; continue; }
             if (y > lyricsTop + lyricsH)  break;
 
@@ -655,20 +709,24 @@ public class LyricsView extends Canvas
             if (active) {
                 g.setColor(0x1C1C1E);
                 g.fillRoundRect(PAD / 2, y - 2,
-                                w - PAD, rows.length * f.getHeight() + 4,
+                                w - PAD, rows.length * lineH + 4,
                                 8, 8);
             }
 
             int color = active ? COLOR_ACTIVE
                                : (i < curLine ? COLOR_PAST : COLOR_FUTURE);
+            Font f  = active ? (cjkMode ? MONO_ACT_FONT : ACT_FONT)
+                                      : (cjkMode ? MONO_FONT     : LINE_FONT);
             g.setFont(f);
             g.setColor(color);
             for (int r = 0; r < rows.length; r++) {
-                int rowY = y + r * f.getHeight();
-                if (rowY + f.getHeight() >= lyricsTop && rowY <= lyricsTop + lyricsH) {
-                    if (cjkMode) {
-                        drawCjkRow(g, rows[r], w / 2, rowY, color, f, charW);
+                int rowY = y + r * lineH;
+                if (rowY + lineH >= lyricsTop && rowY <= lyricsTop + lyricsH) {
+                    if (isCjk) {
+                        drawCjkRow(g, rows[r], w / 2, rowY, cjkMode ? MONO_FONT : LINE_FONT, charW);
                     } else {
+                        g.setFont(active ? ACT_FONT : LINE_FONT);
+                        g.setColor(active ? COLOR_ACTIVE : (i < curLine ? COLOR_PAST : COLOR_FUTURE));
                         g.drawString(rows[r], w / 2, rowY, Graphics.HCENTER | Graphics.TOP);
                     }
                 }

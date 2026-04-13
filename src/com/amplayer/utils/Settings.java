@@ -33,6 +33,7 @@ import javax.microedition.media.Manager;
  *   Record 18 — eqCustomLevels      (comma-separated ints)
  *   Record 19 — volume              (int 0-100, default 100)
  *   Record 20 — binauralEnabled     ("1" or "0", default "0")
+ *   Record 21 — jsr177Enabled       ("1" or "0", default "0")
  */
 public class Settings {
 
@@ -84,6 +85,8 @@ public class Settings {
     public static int     queryLimit      = 100;    // derived-only
     public static String  audioContentType = getSupportedMp4ContentType(); // derived
     public static boolean binauralEnabled  = false;  // persisted as record 20
+    public static boolean jsr177Enabled    = false;   // persisted as record 21
+    
     
     public static String getSupportedMp4ContentType() {
         String[] types = Manager.getSupportedContentTypes(null);
@@ -255,6 +258,9 @@ public class Settings {
                 if (n2 >= 20) {
                     binauralEnabled = "1".equals(readRec(rs2, 20));
                 }
+                if (n2 >= 21) {
+                    jsr177Enabled = "1".equals(readRec(rs2, 21));
+                }
             } catch (Exception ignored) {
             } finally {
                 closeQuietly(rs2);
@@ -297,6 +303,7 @@ public class Settings {
             }
             writeRec(rs, String.valueOf(volume));
             writeRec(rs, binauralEnabled ? "1" : "0");
+            writeRec(rs, jsr177Enabled ? "1" : "0");
         } catch (Exception ignored) {
         } finally {
             closeQuietly(rs);
