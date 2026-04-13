@@ -12,7 +12,7 @@ Currently tested on an Nokia E72 / J2ME Loader emulator.
 - Quick navigation between songs, artists, albums and playlists.
 - Autoplay for artists, albums and playlists
 - Personal and artist radio stations
-- Binaural Dolby Music playback
+- Binaural Dolby Atmos playback
 - LastFM scrobbling
 - Lyrics viewing
 - Shuffle, repeat
